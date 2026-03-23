@@ -67,7 +67,7 @@ hosts:
   - sensor02
 broker:
   host: 192.168.1.222
-  port: 9001
+  port: 1884
   username: admin
   password: "uninus@99"
   domain: uninus
@@ -84,7 +84,7 @@ broker:
 
 Card MQTT WebSocket 連線設定存在瀏覽器 localStorage，不影響 HA 後端。
 
-注意：HA integration 後端服務（例如 `collect_neighbors`、`send_command`）使用的是原生 MQTT/TCP，不是瀏覽器 WebSocket。UNiNUS 這套環境請優先設定 broker port 為 `1883`。若你要在卡片前端直接走 WebSocket，再另外填對應的 WS port/path。後端 service 現在會在需要時自動重連 MQTT；透過 `unircon.add_device` 新增的主機也會持久寫回整合設定，不會因 reload 消失。
+注意：HA integration 後端服務（例如 `collect_neighbors`、`send_command`）使用的是原生 MQTT/TCP，不是瀏覽器 WebSocket，請優先設定 broker port 為 `1883`。卡片前端的 MQTT 分頁走的是 WebSocket，原版環境通常是 `1884`；目前卡片會優先嘗試 `ws://host:port`，再 fallback 到 `ws://host:port/mqtt`。後端 service 現在會在需要時自動重連 MQTT；透過 `unircon.add_device` 新增的主機也會持久寫回整合設定，不會因 reload 消失。
 
 ## 自動化範例
 

@@ -37,11 +37,12 @@ class UNiNUSConsoleCard extends HTMLElement {
     } catch(_) {}
     this._broker = this._broker || {
       host: (this.config.broker && this.config.broker.host) || "",
-      port: (this.config.broker && this.config.broker.port) || 9001,
+      port: (this.config.broker && this.config.broker.port) || 1884,
       username: (this.config.broker && this.config.broker.username) || "",
       password: (this.config.broker && this.config.broker.password) || "",
       domain: (this.config.broker && this.config.broker.domain) || "uninus",
       hostName: (this.config.broker && this.config.broker.hostName) || "ha-card",
+      path: (this.config.broker && this.config.broker.path) || "",
     };
     // Deploy form defaults
     this._deploy = {
@@ -79,71 +80,140 @@ class UNiNUSConsoleCard extends HTMLElement {
   }
 
   // ===== MQTT WebSocket (Phase 2) =====
-  _mqttConnect() {
-    const b = this._broker;
-    if (!b.host) { this._consoleLines.push("[ERROR] MQTT broker host not configured"); this._render(); return; }
-    try { if (this._mqtt) this._mqtt.close(); } catch(_) {}
-    const url = `ws://${b.host}:${b.port}/mqtt`;
+  _readBrokerInputs() {
+    const q = (id, fallback = "") => {
+      const el = this.querySelector(id);
+      return el ? el.value : fallback;
+    };
+    return {
+      ...this._broker,
+      host: q("#ms-host", this._broker.host || "").trim(),
+      port: parseInt(q("#ms-port", this._broker.port || 1884), 10) || 1884,
+      username: q("#ms-user", this._broker.username || ""),
+      password: q("#ms-pass", this._broker.password || ""),
+      domain: q("#ms-domain", this._broker.domain || "uninus").trim() || "uninus",
+    };
+  }
+
+  _persistBrokerSettings(showMessage = true) {
+    this._broker = this._readBrokerInputs();
     try {
-      this._mqtt = new WebSocket(url);
-      this._mqtt.onopen = () => {
-        this._connected = true;
-        this._consoleLines.push(`[MQTT] Connected to ${b.host}:${b.port}`);
-        // Auth
-        if (b.username) {
-          this._mqtt.send(JSON.stringify({
-            cmd: "auth", username: b.username, password: b.password, client_id: "ha-card-" + Math.random().toString(36).substr(6)
-          }));
-        }
-        // Subscribe to device topics
-        const hosts = this.config.hosts || [];
-        hosts.forEach(h => {
-          this._mqtt.send(JSON.stringify({ cmd: "sub", topic: `ha/pub/${h}/console/#` }));
-          this._mqtt.send(JSON.stringify({ cmd: "sub", topic: `ha/pubrsp/${h}/#` }));
-        });
-        this._mqtt.send(JSON.stringify({ cmd: "sub", topic: "ha/pub/+/console/#" }));
-        this._mqtt.send(JSON.stringify({ cmd: "sub", topic: "ha/pubrsp/#" }));
-        this._render();
-      };
-      this._mqtt.onmessage = (evt) => {
-        try {
-          const msg = JSON.parse(evt.data);
-          // Extract console output
-          if (msg.data && msg.data.output) {
-            this._consoleLines.push(msg.data.output);
-          } else if (msg.token) {
-            this._consoleLines.push(`Token[${msg.deviceid || "?"}]: ${msg.token}`);
-            this._token = msg.token;
-          } else {
-            this._consoleLines.push(evt.data.substring(0, 500));
-          }
-          // Neighbor detection (Phase 5)
-          if (msg.host && (msg.type === 13 || msg.type === 14)) {
-            const name = msg.host;
-            if (!this._neighbors.includes(name)) {
-              this._neighbors.push(name);
-              this._consoleLines.push(`[URCON] Discovered neighbor: ${name} (${msg.ip || ""})`);
-            }
-          }
-        } catch(_) {
+      localStorage.setItem("unircon_broker", JSON.stringify(this._broker));
+      if (showMessage) this._consoleLines.push(`[MQTT] Settings saved (${this._broker.host}:${this._broker.port})`);
+      return true;
+    } catch (e) {
+      this._consoleLines.push(`[ERROR] Failed to save MQTT settings: ${e.message}`);
+      return false;
+    }
+  }
+
+  _setupWsSocketHandlers(ws, b, url, remainingUrls) {
+    let opened = false;
+    this._mqtt = ws;
+
+    ws.onopen = () => {
+      opened = true;
+      this._connected = true;
+      this._consoleLines.push(`[MQTT] Connected to ${url}`);
+      if (b.username) {
+        ws.send(JSON.stringify({
+          cmd: "auth", username: b.username, password: b.password, client_id: "ha-card-" + Math.random().toString(36).substr(6)
+        }));
+      }
+      const hosts = this.config.hosts || [];
+      hosts.forEach(h => {
+        ws.send(JSON.stringify({ cmd: "sub", topic: `ha/pub/${h}/console/#` }));
+        ws.send(JSON.stringify({ cmd: "sub", topic: `ha/pubrsp/${h}/#` }));
+      });
+      ws.send(JSON.stringify({ cmd: "sub", topic: "ha/pub/+/console/#" }));
+      ws.send(JSON.stringify({ cmd: "sub", topic: "ha/pubrsp/#" }));
+      this._render();
+    };
+
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        if (msg.data && msg.data.output) {
+          this._consoleLines.push(msg.data.output);
+        } else if (msg.token) {
+          this._consoleLines.push(`Token[${msg.deviceid || "?"}]: ${msg.token}`);
+          this._token = msg.token;
+        } else {
           this._consoleLines.push(evt.data.substring(0, 500));
         }
-        if (this._consoleLines.length > 500) this._consoleLines.shift();
-        this._render();
-      };
-      this._mqtt.onclose = () => {
-        this._connected = false;
-        this._consoleLines.push("[MQTT] Disconnected");
-        this._render();
-      };
-      this._mqtt.onerror = () => {
-        this._connected = false;
-        this._consoleLines.push("[MQTT] Connection error - check broker address/port");
-        this._render();
-      };
-    } catch(e) {
-      this._consoleLines.push(`[MQTT] Error: ${e.message}`);
+        if (msg.host && (msg.type === 13 || msg.type === 14)) {
+          const name = msg.host;
+          if (!this._neighbors.includes(name)) {
+            this._neighbors.push(name);
+            this._consoleLines.push(`[URCON] Discovered neighbor: ${name} (${msg.ip || ""})`);
+          }
+        }
+      } catch(_) {
+        this._consoleLines.push(evt.data.substring(0, 500));
+      }
+      if (this._consoleLines.length > 500) this._consoleLines.shift();
+      this._render();
+    };
+
+    ws.onclose = () => {
+      this._connected = false;
+      if (!opened && remainingUrls.length) {
+        const nextUrl = remainingUrls.shift();
+        this._consoleLines.push(`[MQTT] WS connect failed, trying ${nextUrl}`);
+        this._tryMqttUrls(b, [nextUrl, ...remainingUrls]);
+        return;
+      }
+      this._consoleLines.push("[MQTT] Disconnected");
+      this._render();
+    };
+
+    ws.onerror = () => {
+      this._connected = false;
+      if (!opened) return;
+      this._consoleLines.push("[MQTT] Connection error - check broker address/port");
+      this._render();
+    };
+  }
+
+  _tryMqttUrls(b, urls) {
+    if (!urls.length) {
+      this._consoleLines.push("[ERROR] MQTT WebSocket connect failed for all candidate URLs");
+      this._render();
+      return;
     }
+    const [url, ...remainingUrls] = urls;
+    try {
+      const ws = new WebSocket(url);
+      this._setupWsSocketHandlers(ws, b, url, remainingUrls);
+    } catch (e) {
+      if (remainingUrls.length) {
+        this._tryMqttUrls(b, remainingUrls);
+      } else {
+        this._consoleLines.push(`[MQTT] Error: ${e.message}`);
+        this._render();
+      }
+    }
+  }
+
+  _mqttConnect() {
+    const saved = this._persistBrokerSettings(false);
+    const b = this._broker;
+    if (!b.host) {
+      this._consoleLines.push("[ERROR] MQTT broker host not configured");
+      this._render();
+      return;
+    }
+    try { if (this._mqtt) this._mqtt.close(); } catch(_) {}
+    const candidates = [];
+    const path = (b.path || "").trim();
+    if (path) {
+      candidates.push(`ws://${b.host}:${b.port}${path.startsWith("/") ? path : "/" + path}`);
+    }
+    candidates.push(`ws://${b.host}:${b.port}`);
+    candidates.push(`ws://${b.host}:${b.port}/mqtt`);
+    const deduped = [...new Set(candidates)];
+    if (saved) this._consoleLines.push(`[MQTT] Using broker ${b.host}:${b.port}`);
+    this._tryMqttUrls(b, deduped);
   }
 
   _mqttDisconnect() {
@@ -422,7 +492,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       <div class="tp ${this._tab==='mqtt'?'on':''}" id="tp-mqtt">
         <div class="msf">
           <div class="row"><label>Broker</label><input id="ms-host" value="${this._E(this._broker.host)}" placeholder="192.168.1.222"/></div>
-          <div class="row"><label>WebSocket Port</label><input id="ms-port" value="${this._E(this._broker.port)}" placeholder="9001" style="width:80px"/></div>
+          <div class="row"><label>WebSocket Port</label><input id="ms-port" value="${this._E(this._broker.port)}" placeholder="1884" style="width:80px"/></div>
           <div class="row"><label>Username</label><input id="ms-user" value="${this._E(this._broker.username)}"/></div>
           <div class="row"><label>Password</label><input id="ms-pass" type="password" value="${this._E(this._broker.password)}"/></div>
           <div class="row"><label>URCON Domain</label><input id="ms-domain" value="${this._E(this._broker.domain)}" style="width:120px"/></div>
@@ -525,13 +595,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     // MQTT settings (Phase 5)
     const msSave = this.querySelector("#ms-save");
     if (msSave) msSave.addEventListener("click", () => {
-      this._broker.host = this.querySelector("#ms-host").value;
-      this._broker.port = parseInt(this.querySelector("#ms-port").value) || 9001;
-      this._broker.username = this.querySelector("#ms-user").value;
-      this._broker.password = this.querySelector("#ms-pass").value;
-      this._broker.domain = this.querySelector("#ms-domain").value;
-      try { localStorage.setItem("unircon_broker", JSON.stringify(this._broker)); } catch(_) {}
-      this._consoleLines.push("[MQTT] Settings saved");
+      this._persistBrokerSettings(true);
       this._render();
     });
     const msConn = this.querySelector("#ms-connect");
