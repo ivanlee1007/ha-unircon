@@ -1,0 +1,100 @@
+send_command:
+  name: Send command
+  description: Send a command to a UNiNUS device.
+  fields:
+    host:
+      name: Host
+      description: Target device hostname.
+      required: true
+      example: "sensor01"
+      selector:
+        text:
+    command:
+      name: Command
+      description: Command to execute.
+      required: true
+      example: "sh ver"
+      selector:
+        text:
+    token:
+      name: Token
+      description: Device token (optional, uses stored if empty).
+      required: false
+      selector:
+        text:
+
+request_token:
+  name: Request token
+  description: Request device token/serial number from a UNiNUS device.
+  fields:
+    host:
+      name: Host
+      description: Target device hostname.
+      required: true
+      example: "sensor01"
+      selector:
+        text:
+    username:
+      name: Username
+      description: Login username (optional, uses config default if empty).
+      required: false
+      selector:
+        text:
+    password:
+      name: Password
+      description: Login password (optional, uses config default if empty).
+      required: false
+      selector:
+        text:
+
+batch_command:
+  name: Batch command
+  description: Execute commands across multiple devices sequentially.
+  fields:
+    hosts:
+      name: Hosts
+      description: List of target hostnames.
+      required: true
+      example: "['sensor01', 'sensor02']"
+      selector:
+        object:
+    commands:
+      name: Commands
+      description: List of commands to execute on each host.
+      required: true
+      example: "['sh ver', 'sh result']"
+      selector:
+        object:
+    delay:
+      name: Delay
+      description: Delay in seconds between commands (default: 1).
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 30
+          unit_of_measurement: seconds
+
+mqtt_publish:
+  name: MQTT publish
+  description: Publish a test message to an MQTT topic.
+  fields:
+    topic:
+      name: Topic
+      description: MQTT topic to publish to.
+      required: true
+      example: "ha/test/topic"
+      selector:
+        text:
+    payload:
+      name: Payload
+      description: Message payload.
+      required: true
+      example: '{"msg":"hello"}'
+      selector:
+        text:
+
+collect_neighbors:
+  name: Collect UNiNUS neighbors
+  description: Discover UNiNUS devices on the network via URCOM protocol.

@@ -1,0 +1,104 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MQTT 連線設定",
+        "description": "設定 UNiNUS 設備使用的 MQTT Broker 連線。",
+        "data": {
+          "broker_host": "MQTT 伺服器",
+          "broker_port": "Port",
+          "username": "使用者帳號",
+          "password": "密碼",
+          "urcon_domain": "URCON Domain"
+        }
+      },
+      "devices": {
+        "title": "設備清單",
+        "description": "每行輸入一台主機名稱，可留空稍後再加。",
+        "data": {
+          "hosts": "主機清單"
+        }
+      },
+      "reauth_confirm": {
+        "title": "重新驗證",
+        "description": "MQTT 連線憑證失效，請更新帳號密碼。",
+        "data": {
+          "username": "使用者帳號",
+          "password": "密碼"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "無法連線到 MQTT Broker，請確認位址和連線資訊。",
+      "unknown": "發生未知錯誤。"
+    },
+    "abort": {
+      "already_configured": "此 MQTT Broker 已設定過。",
+      "reauth_successful": "重新驗證成功。"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "console": {
+        "name": "Console 輸出"
+      },
+      "status": {
+        "name": "設備狀態"
+      }
+    },
+    "button": {
+      "enable": {
+        "name": "Enable"
+      },
+      "show_version": {
+        "name": "顯示版本"
+      },
+      "show_result": {
+        "name": "顯示結果"
+      },
+      "urcon_neighbors": {
+        "name": "URCON 鄰居"
+      },
+      "backup": {
+        "name": "備份"
+      }
+    },
+    "text": {
+      "token": {
+        "name": "設備序號"
+      }
+    }
+  },
+  "services": {
+    "send_command": {
+      "name": "下指令",
+      "description": "對 UNiNUS 設備下指令。",
+      "fields": {
+        "host": { "name": "主機", "description": "目標設備主機名稱" },
+        "command": { "name": "指令", "description": "要執行的指令" },
+        "token": { "name": "序號", "description": "設備序號（可選）" }
+      }
+    },
+    "batch_command": {
+      "name": "批次指令",
+      "description": "對多台設備執行批次指令。",
+      "fields": {
+        "hosts": { "name": "主機清單", "description": "目標主機列表" },
+        "commands": { "name": "指令清單", "description": "要執行的指令列表" },
+        "delay": { "name": "延遲", "description": "指令間隔秒數" }
+      }
+    },
+    "request_token": {
+      "name": "要求序號",
+      "description": "向設備要求序號/Token。"
+    },
+    "mqtt_publish": {
+      "name": "MQTT 發佈",
+      "description": "測試發佈 MQTT 訊息。"
+    },
+    "collect_neighbors": {
+      "name": "蒐集鄰居",
+      "description": "探索網路上的 UNiNUS 設備。"
+    }
+  }
+}

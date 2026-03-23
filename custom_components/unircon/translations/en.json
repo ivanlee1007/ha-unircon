@@ -1,0 +1,88 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MQTT Connection",
+        "description": "Configure the MQTT Broker connection for UNiNUS devices.",
+        "data": {
+          "broker_host": "MQTT Server",
+          "broker_port": "Port",
+          "username": "Username",
+          "password": "Password",
+          "urcon_domain": "URCON Domain"
+        }
+      },
+      "devices": {
+        "title": "Device List",
+        "description": "Enter one hostname per line. Leave empty to add later.",
+        "data": {
+          "hosts": "Host List"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate",
+        "description": "MQTT credentials expired. Please update.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to MQTT Broker. Check address and credentials.",
+      "unknown": "An unknown error occurred."
+    },
+    "abort": {
+      "already_configured": "This MQTT Broker is already configured.",
+      "reauth_successful": "Re-authentication successful."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "console": { "name": "Console Output" },
+      "status": { "name": "Device Status" }
+    },
+    "button": {
+      "enable": { "name": "Enable" },
+      "show_version": { "name": "Show Version" },
+      "show_result": { "name": "Show Result" },
+      "urcon_neighbors": { "name": "URCON Neighbors" },
+      "backup": { "name": "Backup" }
+    },
+    "text": {
+      "token": { "name": "Device Token" }
+    }
+  },
+  "services": {
+    "send_command": {
+      "name": "Send Command",
+      "description": "Send a command to a UNiNUS device.",
+      "fields": {
+        "host": { "name": "Host", "description": "Target device hostname" },
+        "command": { "name": "Command", "description": "Command to execute" },
+        "token": { "name": "Token", "description": "Device token (optional)" }
+      }
+    },
+    "batch_command": {
+      "name": "Batch Command",
+      "description": "Execute commands across multiple devices.",
+      "fields": {
+        "hosts": { "name": "Hosts", "description": "List of target hostnames" },
+        "commands": { "name": "Commands", "description": "List of commands to execute" },
+        "delay": { "name": "Delay", "description": "Seconds between commands" }
+      }
+    },
+    "request_token": {
+      "name": "Request Token",
+      "description": "Request device token/serial number."
+    },
+    "mqtt_publish": {
+      "name": "MQTT Publish",
+      "description": "Publish a test MQTT message."
+    },
+    "collect_neighbors": {
+      "name": "Collect Neighbors",
+      "description": "Discover UNiNUS devices on the network."
+    }
+  }
+}
