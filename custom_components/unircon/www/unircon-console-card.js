@@ -120,11 +120,6 @@ class UNiNUSConsoleCard extends HTMLElement {
       opened = true;
       this._connected = true;
       this._consoleLines.push(`[MQTT] Connected to ${url}`);
-      if (b.username) {
-        ws.send(JSON.stringify({
-          cmd: "auth", username: b.username, password: b.password, client_id: "ha-card-" + Math.random().toString(36).substr(6)
-        }));
-      }
       const hosts = this.config.hosts || [];
       const discoveryHost = (b.hostName || "urcon").trim() || "urcon";
       const topics = new Set([
@@ -138,9 +133,20 @@ class UNiNUSConsoleCard extends HTMLElement {
         topics.add(`ha/pub/${h}/console/#`);
         topics.add(`ha/pubrsp/${h}/#`);
       });
-      topics.forEach(topic => ws.send(JSON.stringify({ cmd: "sub", topic })));
-      this._consoleLines.push(`[MQTT] Subscribed: ${Array.from(topics).join(", ")}`);
-      this._render();
+      const subscribeAll = (phase) => {
+        if (this._mqtt !== ws || !this._connected) return;
+        topics.forEach(topic => ws.send(JSON.stringify({ cmd: "sub", topic })));
+        this._consoleLines.push(`[MQTT] Subscribed${phase ? ` (${phase})` : ""}: ${Array.from(topics).join(", ")}`);
+        this._render();
+      };
+      if (b.username) {
+        ws.send(JSON.stringify({
+          cmd: "auth", username: b.username, password: b.password, client_id: "ha-card-" + Math.random().toString(36).substr(6)
+        }));
+      }
+      subscribeAll("initial");
+      setTimeout(() => subscribeAll("retry-500ms"), 500);
+      setTimeout(() => subscribeAll("retry-1500ms"), 1500);
     };
 
     ws.onmessage = (evt) => {
@@ -399,7 +405,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const lines = this._consoleLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.26";
+    const buildVersion = "1.0.27";
 
     this.innerHTML = `
     <style>
