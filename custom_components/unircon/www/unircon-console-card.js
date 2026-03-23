@@ -150,7 +150,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     return {
       ...extra,
       broker_host: (b.host || "").trim(),
-      broker_port: parseInt(b.port) || 1884,
+      broker_port: 1883,  // Backend MQTT is always TCP port 1883 (not WS 1884)
       broker_user: (b.username || "").trim(),
       broker_password: (b.password || "").trim(),
     };
@@ -629,7 +629,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.46";
+    const buildVersion = "1.0.47";
 
     this.innerHTML = `
     <style>
