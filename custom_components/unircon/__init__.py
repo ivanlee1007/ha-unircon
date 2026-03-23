@@ -195,6 +195,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     mqtt_client.on_message(_on_message)
 
+    async def _ensure_backend_mqtt_connected() -> bool:
+        if mqtt_client.is_connected:
+            return True
+
+        try:
+            await hass.async_add_executor_job(mqtt_client.connect)
+
+            def _resubscribe() -> None:
+                if device_data[DATA_HOSTS]:
+                    mqtt_client.subscribe_devices(device_data[DATA_HOSTS])
+                mqtt_client.subscribe_urcom()
+
+            await hass.async_add_executor_job(_resubscribe)
+            return mqtt_client.is_connected
+        except Exception as err:
+            _LOGGER.error("Backend MQTT reconnect failed: %s", err)
+            return False
+
     # ===== Services =====
     async def handle_send_command(call: ServiceCall) -> None:
         host = call.data.get("host", "")
@@ -233,10 +251,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 f"{DOMAIN}_console",
                 {
                     "topic": "service/collect_neighbors",
-                    "data": {"output": "[ERROR] Backend MQTT not connected; neighbor discovery not sent"},
+                    "data": {"output": f"[MQTT] Backend not connected, reconnecting to {broker_host}:{broker_port}..."},
                 },
             )
-            return
+            ok = await _ensure_backend_mqtt_connected()
+            if not ok:
+                hass.bus.async_fire(
+                    f"{DOMAIN}_console",
+                    {
+                        "topic": "service/collect_neighbors",
+                        "data": {"output": f"[ERROR] Backend MQTT reconnect failed; neighbor discovery not sent ({broker_host}:{broker_port})"},
+                    },
+                )
+                return
+            hass.bus.async_fire(
+                f"{DOMAIN}_console",
+                {
+                    "topic": "service/collect_neighbors",
+                    "data": {"output": f"[MQTT] Backend reconnected to {broker_host}:{broker_port}"},
+                },
+            )
 
         def _collect() -> None:
             mqtt_client.collect_neighbors()
