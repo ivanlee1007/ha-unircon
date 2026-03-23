@@ -37,19 +37,25 @@ DATA_TOKENS = "tokens"
 DATA_CONSOLE_HISTORY = "console_history"
 
 
-async def _register_card_once(hass: HomeAssistant) -> None:
-    """Register dashboard card static path (once per domain)."""
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up UNiNUS Remote Console domain data and dashboard card."""
     domain_data = hass.data.setdefault(DOMAIN, {})
-    if domain_data.get("_card_registered"):
-        return
-    www_dir = os.path.join(os.path.dirname(__file__), "www")
-    if os.path.isdir(www_dir):
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig("/unircon-static", www_dir, cache_headers=True)]
-        )
+
+    if not domain_data.get("card_static_registered"):
+        www_dir = os.path.join(os.path.dirname(__file__), "www")
+        if os.path.isdir(www_dir):
+            await hass.http.async_register_static_paths(
+                [StaticPathConfig("/unircon-static", www_dir, cache_headers=False)]
+            )
+            domain_data["card_static_registered"] = True
+            _LOGGER.info("Registered unircon card static path at /unircon-static")
+
+    if not domain_data.get("card_resource_registered"):
         frontend.add_extra_js_url(hass, CARD_URL)
-        domain_data["_card_registered"] = True
-        _LOGGER.info("Registered unircon dashboard card at %s", CARD_URL)
+        domain_data["card_resource_registered"] = True
+        _LOGGER.info("Auto-loaded unircon card resource: %s", CARD_URL)
+
+    return True
 
 
 def generate_deploy_config(params: dict) -> str:
@@ -111,8 +117,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     urcon_domain = config.get(CONF_DOMAIN, "uninus")
     hosts = config.get(CONF_HOSTS, [])
 
-    # Register card static path (once per domain)
-    await _register_card_once(hass)
+    # Card static path registered in async_setup (domain level)
 
     # Create MQTT client
     mqtt_client = UNiNUSMQTT(
