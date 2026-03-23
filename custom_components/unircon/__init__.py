@@ -267,6 +267,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return False, (mqtt_client.last_connect_error or str(err))
 
     # ===== Services =====
+
+    def _broker_override_from_call(call_data: dict) -> tuple[str, int, str, str] | None:
+        h = str(call_data.get("broker_host", "")).strip()
+        if not h:
+            return None
+        p = int(call_data.get("broker_port", 0) or 0)
+        u = str(call_data.get("broker_user", "")).strip()
+        pw = str(call_data.get("broker_password", "")).strip()
+        return (h, p or broker_port, u, pw)
+
+    async def _switch_broker_if_needed(call_data: dict) -> tuple[bool, tuple | None]:
+        ov = _broker_override_from_call(call_data)
+        if not ov or ov[0] == broker_host:
+            return False, None
+        h, p, u, pw = ov
+        _fire_console_output(f"[MQTT] 切換 Broker → {h}:{p}", "broker/switch")
+        def _sw():
+            return mqtt_client.reconnect_to(h, p, u, pw)
+        try:
+            old = await hass.async_add_executor_job(_sw)
+            await asyncio.sleep(0.3)
+            return True, old
+        except Exception as e:
+            _fire_console_output(f"[ERROR] 切換 Broker 失敗: {e}", "broker/switch")
+            return False, None
+
+    async def _restore_broker_if_needed(switched: bool, old_values: tuple | None) -> None:
+        if not switched or not old_values:
+            return
+        _fire_console_output(f"[MQTT] 還原 Broker → {old_values[0]}:{old_values[1]}", "broker/restore")
+        try:
+            await hass.async_add_executor_job(lambda: mqtt_client.reconnect_to(*old_values))
+        except Exception as e:
+            _fire_console_output(f"[WARN] 還原 Broker 失敗: {e}", "broker/restore")
+
     async def handle_send_command(call: ServiceCall) -> None:
         host = call.data.get("host", "")
         command = call.data.get("command", "")
@@ -276,19 +311,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not token:
             token = device_data[DATA_TOKENS].get(host, "00000000")
 
-        ok, err_text = await _ensure_backend_mqtt_connected("send_command")
-        if not ok:
-            detail = f": {err_text}" if err_text else ""
-            _fire_console_output(
-                f"[ERROR] Backend MQTT reconnect failed; command not sent ({broker_host}:{broker_port}){detail}",
-                "service/send_command",
-            )
-            return
+        switched, old_vals = await _switch_broker_if_needed(call.data)
+        try:
+            ok, err_text = await _ensure_backend_mqtt_connected("send_command")
+            if not ok:
+                detail = f": {err_text}" if err_text else ""
+                _fire_console_output(
+                    f"[ERROR] Backend MQTT reconnect failed; command not sent ({broker_host}:{broker_port}){detail}",
+                    "service/send_command",
+                )
+                return
 
-        def _send() -> None:
-            mqtt_client.send_command(host, token, command)
+            def _send() -> None:
+                mqtt_client.send_command(host, token, command)
 
-        await hass.async_add_executor_job(_send)
+            await hass.async_add_executor_job(_send)
+        finally:
+            await _restore_broker_if_needed(switched, old_vals)
 
     async def handle_request_token(call: ServiceCall) -> None:
         host = call.data.get("host", "")
@@ -297,19 +336,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not host:
             return
 
-        ok, err_text = await _ensure_backend_mqtt_connected("request_token")
-        if not ok:
-            detail = f": {err_text}" if err_text else ""
-            _fire_console_output(
-                f"[ERROR] Backend MQTT reconnect failed; token request not sent ({broker_host}:{broker_port}){detail}",
-                "service/request_token",
-            )
-            return
+        switched, old_vals = await _switch_broker_if_needed(call.data)
+        try:
+            ok, err_text = await _ensure_backend_mqtt_connected("request_token")
+            if not ok:
+                detail = f": {err_text}" if err_text else ""
+                _fire_console_output(
+                    f"[ERROR] Backend MQTT reconnect failed; token request not sent ({broker_host}:{broker_port}){detail}",
+                    "service/request_token",
+                )
+                return
 
-        def _req() -> None:
-            mqtt_client.request_token(host, user, pw)
+            def _req() -> None:
+                mqtt_client.request_token(host, user, pw)
 
-        await hass.async_add_executor_job(_req)
+            await hass.async_add_executor_job(_req)
+        finally:
+            await _restore_broker_if_needed(switched, old_vals)
 
     async def handle_mqtt_publish(call: ServiceCall) -> None:
         topic = call.data.get("topic", "")
@@ -317,60 +360,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not topic:
             return
 
-        ok, err_text = await _ensure_backend_mqtt_connected("mqtt_publish")
-        if not ok:
-            detail = f": {err_text}" if err_text else ""
-            _fire_console_output(
-                f"[ERROR] Backend MQTT reconnect failed; publish not sent ({broker_host}:{broker_port}){detail}",
-                "service/mqtt_publish",
-            )
-            return
+        switched, old_vals = await _switch_broker_if_needed(call.data)
+        try:
+            ok, err_text = await _ensure_backend_mqtt_connected("mqtt_publish")
+            if not ok:
+                detail = f": {err_text}" if err_text else ""
+                _fire_console_output(
+                    f"[ERROR] Backend MQTT reconnect failed; publish not sent ({broker_host}:{broker_port}){detail}",
+                    "service/mqtt_publish",
+                )
+                return
 
-        def _pub() -> None:
-            mqtt_client.publish_test(topic, payload)
+            def _pub() -> None:
+                mqtt_client.publish_test(topic, payload)
 
-        await hass.async_add_executor_job(_pub)
+            await hass.async_add_executor_job(_pub)
+        finally:
+            await _restore_broker_if_needed(switched, old_vals)
 
     async def handle_collect_neighbors(call: ServiceCall) -> None:
         import asyncio
 
-        # Check if card passed different broker info (Site Manager)
-        req_broker_host = str(call.data.get("broker_host", "")).strip()
-        req_broker_port = int(call.data.get("broker_port", 0) or 0)
-        req_broker_user = str(call.data.get("broker_user", "")).strip()
-        req_broker_pass = str(call.data.get("broker_password", "")).strip()
-
-        # Temporarily reconnect to card's broker if different
-        need_reconnect_back = False
-        saved_broker = None
-        if req_broker_host and (req_broker_host != broker_host or (req_broker_port and req_broker_port != broker_port)):
-            _fire_console_output(
-                f"[MQTT] Temporarily switching broker to {req_broker_host}:{req_broker_port}",
-                "service/collect_neighbors",
-            )
-            try:
-                def _reconnect() -> tuple:
-                    return mqtt_client.reconnect_to(
-                        req_broker_host,
-                        req_broker_port or broker_port,
-                        req_broker_user,
-                        req_broker_pass,
-                    )
-                saved_broker = await hass.async_add_executor_job(_reconnect)
-                need_reconnect_back = True
-                # Update local vars for logging
-                broker_host_used = req_broker_host
-                broker_port_used = req_broker_port or broker_port
-                await asyncio.sleep(0.3)
-            except Exception as e:
-                _fire_console_output(
-                    f"[ERROR] Cannot connect to {req_broker_host}:{req_broker_port}: {e}",
-                    "service/collect_neighbors",
-                )
-                return
-        else:
-            broker_host_used = broker_host
-            broker_port_used = broker_port
+        switched, old_vals = await _switch_broker_if_needed(call.data)
+        broker_host_used = str(call.data.get("broker_host", broker_host)).strip() or broker_host
+        broker_port_used = int(call.data.get("broker_port", 0) or broker_port) or broker_port
 
         ok, err_text = await _ensure_backend_mqtt_connected("collect_neighbors")
         if not ok:
@@ -379,12 +392,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 f"[ERROR] Backend MQTT reconnect failed; neighbor discovery not sent ({broker_host_used}:{broker_port_used}){detail}",
                 "service/collect_neighbors",
             )
-            # Reconnect back to original if we switched
-            if need_reconnect_back and saved_broker:
-                try:
-                    await hass.async_add_executor_job(lambda: mqtt_client.reconnect_to(*saved_broker))
-                except Exception:
-                    pass
+            await _restore_broker_if_needed(switched, old_vals)
             return
 
         _fire_console_output(
@@ -429,19 +437,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "service/collect_neighbors",
             )
         finally:
-            # Reconnect back to original broker if we temporarily switched
-            if need_reconnect_back and saved_broker:
-                _fire_console_output(
-                    f"[MQTT] Reconnecting back to original broker ({saved_broker[0]}:{saved_broker[1]})",
-                    "service/collect_neighbors",
-                )
-                try:
-                    await hass.async_add_executor_job(lambda: mqtt_client.reconnect_to(*saved_broker))
-                except Exception as e:
-                    _fire_console_output(
-                        f"[WARN] Failed to reconnect to original broker: {e}",
-                        "service/collect_neighbors",
-                    )
+            await _restore_broker_if_needed(switched, old_vals)
 
     async def handle_batch_command(call: ServiceCall) -> None:
         hosts_list = call.data.get("hosts", [])

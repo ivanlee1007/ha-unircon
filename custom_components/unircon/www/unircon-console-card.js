@@ -144,6 +144,18 @@ class UNiNUSConsoleCard extends HTMLElement {
     };
   }
 
+
+  _brokerServiceData(extra = {}) {
+    const b = this._broker || {};
+    return {
+      ...extra,
+      broker_host: (b.host || "").trim(),
+      broker_port: parseInt(b.port) || 1884,
+      broker_user: (b.username || "").trim(),
+      broker_password: (b.password || "").trim(),
+    };
+  }
+
   _persistBrokerSettings(showMessage = true) {
     this._broker = this._readBrokerInputs();
     if (!this._broker.host) {
@@ -325,9 +337,9 @@ class UNiNUSConsoleCard extends HTMLElement {
   _mqttSend(topic, payload) {
     if (this._connected && this._mqtt) {
       // Use HA service (more reliable) if MQTT WS not connected
-      this._hass.callService("unircon", "mqtt_publish", { topic, payload }).catch(() => {});
+      this._hass.callService("unircon", "mqtt_publish", this._brokerServiceData({ topic, payload })).catch(() => {});
     } else {
-      this._hass.callService("unircon", "mqtt_publish", { topic, payload }).catch(() => {});
+      this._hass.callService("unircon", "mqtt_publish", this._brokerServiceData({ topic, payload })).catch(() => {});
     }
   }
 
@@ -352,7 +364,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const { host, cmd } = this._cmdQueue.shift();
     this._waitingReply = true;
     this._pushTerminal(`--> ${cmd}`);
-    this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
+    this._hass.callService("unircon", "send_command", this._brokerServiceData({ host, command: cmd, token: this._token })).catch(() => {});
     this._updateCmdButton();
   }
   _onCmdEcho(line) {
@@ -381,7 +393,7 @@ class UNiNUSConsoleCard extends HTMLElement {
   _hotkey(cmd) {
     const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
     this._pushTerminal(`--> ${cmd}`);
-    this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
+    this._hass.callService("unircon", "send_command", this._brokerServiceData({ host, command: cmd, token: this._token })).catch(() => {});
   }
   _downloadOutput() {
     const text = this._terminalLines.join("\n");
@@ -399,7 +411,7 @@ class UNiNUSConsoleCard extends HTMLElement {
   }
   _reqToken() {
     const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
-    this._hass.callService("unircon", "request_token", { host }).catch(() => {});
+    this._hass.callService("unircon", "request_token", this._brokerServiceData({ host })).catch(() => {});
     this._pushStatus("--> Requesting token...");
   }
 
@@ -466,7 +478,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       this._pushStatus(`[Batch] === ${host} ===`);
       this._render();
       // Request token
-      this._hass.callService("unircon", "request_token", { host }).catch(() => {});
+      this._hass.callService("unircon", "request_token", this._brokerServiceData({ host })).catch(() => {});
       await new Promise(r => setTimeout(r, 2000));
       for (const cmd of cmds) {
         this._pushTerminal(`[${host}] --> ${cmd}`);
@@ -486,16 +498,11 @@ class UNiNUSConsoleCard extends HTMLElement {
   _collectNeighbors() {
     const browserCallbackIp = (window.__localIP || (location && location.hostname) || "").trim();
     const broker = this._readBrokerInputs();
-    const serviceData = {
+    const serviceData = this._brokerServiceData({
       discovery_host_name: "urcon",
       callback_ip: browserCallbackIp,
       urcon_domain: (broker.domain || "uninus").trim() || "uninus",
-      // Pass current broker info so backend connects to the right broker
-      broker_host: (broker.host || "").trim(),
-      broker_port: parseInt(broker.port) || 1884,
-      broker_user: (broker.username || "").trim(),
-      broker_password: (broker.password || "").trim(),
-    };
+    });
     this._debugRawWsUntil = Date.now() + 20000;
     this._wsFrameSeq = 0;
     this._neighbors = [];
@@ -622,7 +629,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.44";
+    const buildVersion = "1.0.45";
 
     this.innerHTML = `
     <style>
