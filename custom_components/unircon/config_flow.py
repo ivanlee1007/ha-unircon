@@ -8,7 +8,6 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
@@ -35,27 +34,35 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle the initial step - MQTT broker connection."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
             # Validate MQTT connection
             try:
-                import paho.mqtt.client as mqtt
-
                 def _test_mqtt() -> tuple[bool, str]:
-                    client = mqtt.Client(
-                        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                        client_id="ha-unircon-setup",
-                    )
+                    import paho.mqtt.client as mqtt
+
+                    # Use v2 API if available (paho-mqtt >= 2.0), fallback to v1
+                    try:
+                        client = mqtt.Client(
+                            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                            client_id="ha-unircon-setup",
+                        )
+                    except AttributeError:
+                        client = mqtt.Client(
+                            client_id="ha-unircon-setup",
+                        )
+
                     client.username_pw_set(
-                        user_input[CONF_USERNAME], user_input[CONF_PASSWORD]
+                        user_input.get(CONF_USERNAME, ""),
+                        user_input.get(CONF_PASSWORD, ""),
                     )
                     try:
                         client.connect(
                             user_input[CONF_BROKER_HOST],
-                            int(user_input[CONF_BROKER_PORT]),
+                            int(user_input.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT)),
                             timeout=10,
                         )
                         client.disconnect()
@@ -69,7 +76,7 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 ok, err = await self.hass.async_add_executor_job(_test_mqtt)
                 if not ok:
-                    errors["base"] = "cannot_connect" if err in ("cannot_connect",) else "unknown"
+                    errors["base"] = "cannot_connect" if err == "cannot_connect" else "unknown"
                     _LOGGER.warning("MQTT test failed: %s", err)
             except Exception as err:
                 _LOGGER.error("MQTT validation error: %s", err)
@@ -95,7 +102,7 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_devices(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Handle device list step."""
         errors: dict[str, str] = {}
 
@@ -107,7 +114,6 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if h.strip()
             ]
 
-            # Create config entry
             return self.async_create_entry(
                 title=f"UNiNUS ({self._broker_config[CONF_BROKER_HOST]})",
                 data={
@@ -121,23 +127,19 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             step_id="devices",
             data_schema=vol.Schema(
                 {
-                    vol.Optional(CONF_HOSTS, default=""): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            multiline=True,
-                        ),
-                    ),
+                    vol.Optional(CONF_HOSTS, default=""): str,
                 }
             ),
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> config_entries.ConfigFlowResult:
         """Handle reauthorization."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> config_entries.ConfigFlowResult:
         """Confirm reauth."""
         errors: dict[str, str] = {}
 

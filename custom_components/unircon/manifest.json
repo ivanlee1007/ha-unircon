@@ -7,6 +7,6 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/ivanlee1007/ha-unircon/issues",
   "requirements": ["paho-mqtt>=1.6.0"],
-  "version": "1.0.0",
+  "version": "1.0.1",
   "homeassistant": "2024.1.0"
 }

@@ -24,7 +24,7 @@ TOPIC_URCOM = "urcom/{domain}"
 TOPIC_HOST_COLLECT = "ha/sub/{host_name}"
 
 # Platform
-PLATFORMS = ["sensor", "button"]
+PLATFORMS = ["sensor", "button", "text"]
 
 # Device state
 STATE_ONLINE = "online"

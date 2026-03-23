@@ -6,8 +6,6 @@ import json
 import logging
 from typing import Any, Callable
 
-import paho.mqtt.client as mqtt
-
 from .const import (
     TOPIC_COMMAND,
     TOPIC_CONSOLE,
@@ -37,17 +35,28 @@ class UNiNUSMQTT:
         self._password = password
         self._domain = urcon_domain
         self._host_name = host_name
-        self._client: mqtt.Client | None = None
+        self._client = None
         self._on_message_callbacks: list[Callable[[str, str], None]] = []
         self._on_connect_callbacks: list[Callable[[bool], None]] = []
 
     def connect(self) -> None:
         """Connect to MQTT broker."""
-        self._client = mqtt.Client(
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=f"ha-unircon-{self._host_name}",
-        )
-        self._client.username_pw_set(self._username, self._password)
+        import paho.mqtt.client as mqtt
+
+        # Use v2 API if available (paho-mqtt >= 2.0), fallback to v1
+        try:
+            self._client = mqtt.Client(
+                callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                client_id=f"ha-unircon-{self._host_name}",
+            )
+        except AttributeError:
+            # paho-mqtt 1.x
+            self._client = mqtt.Client(
+                client_id=f"ha-unircon-{self._host_name}",
+            )
+
+        if self._username:
+            self._client.username_pw_set(self._username, self._password)
         self._client.on_connect = self._on_connect
         self._client.on_message = self._on_message
         self._client.on_disconnect = self._on_disconnect
@@ -57,13 +66,17 @@ class UNiNUSMQTT:
             _LOGGER.info("UNiNUS MQTT connected to %s:%s", self._host, self._port)
         except Exception as err:
             _LOGGER.error("UNiNUS MQTT connect failed: %s", err)
+            self._client = None
             raise
 
     def disconnect(self) -> None:
         """Disconnect from MQTT broker."""
         if self._client:
-            self._client.loop_stop()
-            self._client.disconnect()
+            try:
+                self._client.loop_stop()
+                self._client.disconnect()
+            except Exception:
+                pass
             self._client = None
 
     def subscribe_devices(self, hosts: list[str]) -> None:
@@ -74,33 +87,28 @@ class UNiNUSMQTT:
         for host in hosts:
             topics.append((TOPIC_CONSOLE.format(host=host), 1))
             topics.append((TOPIC_RESPONSE.format(host=host), 1))
-        # Subscribe response wildcard for batch discovery
         topics.append(("ha/pubrsp/#", 1))
-        # Subscribe console wildcard
         topics.append(("ha/pub/+/console/#", 1))
         for topic, qos in topics:
-            self._client.subscribe(topic, qos)
-            _LOGGER.debug("Subscribed to: %s", topic)
+            try:
+                self._client.subscribe(topic, qos)
+            except Exception as err:
+                _LOGGER.warning("Subscribe failed for %s: %s", topic, err)
 
     def subscribe_urcom(self) -> None:
         """Subscribe to URCOM neighbor discovery topic."""
         if not self._client:
             return
         topic = TOPIC_URCOM.format(domain=self._domain)
-        self._client.subscribe(topic, 1)
-        # Also subscribe to host collection topic
         collect_topic = TOPIC_HOST_COLLECT.format(host_name=self._host_name)
-        self._client.subscribe(collect_topic, 1)
-        _LOGGER.debug("Subscribed to URCOM topics: %s, %s", topic, collect_topic)
+        try:
+            self._client.subscribe(topic, 1)
+            self._client.subscribe(collect_topic, 1)
+        except Exception as err:
+            _LOGGER.warning("URCOM subscribe failed: %s", err)
 
     def send_command(self, host: str, token: str, command: str) -> None:
-        """Send a command to a UNiNUS device.
-
-        Args:
-            host: Target hostname
-            token: Device token/serial number
-            command: Command string (spaces replaced with / by device)
-        """
+        """Send a command to a UNiNUS device."""
         if not self._client or not self._client.is_connected:
             _LOGGER.error("MQTT not connected, cannot send command")
             return
@@ -111,13 +119,7 @@ class UNiNUSMQTT:
         _LOGGER.info("Sent command to %s: %s", host, payload)
 
     def request_token(self, host: str, username: str, password: str) -> None:
-        """Request token from a device.
-
-        Args:
-            host: Target hostname
-            username: Login username
-            password: Login password
-        """
+        """Request token from a device."""
         if not self._client or not self._client.is_connected:
             _LOGGER.error("MQTT not connected, cannot request token")
             return
@@ -156,34 +158,39 @@ class UNiNUSMQTT:
 
     @property
     def is_connected(self) -> bool:
-        return self._client is not None and self._client.is_connected()
+        try:
+            return self._client is not None and self._client.is_connected()
+        except Exception:
+            return False
 
     def on_message(self, callback: Callable[[str, str], None]) -> None:
-        """Register a callback for incoming messages: (topic, payload)."""
+        """Register a callback for incoming messages."""
         self._on_message_callbacks.append(callback)
 
     def on_connect(self, callback: Callable[[bool], None]) -> None:
         """Register a callback for connection state changes."""
         self._on_connect_callbacks.append(callback)
 
-    def _on_connect(
-        self, client: mqtt.Client, userdata: Any, flags: Any, rc: Any, properties: Any = None
-    ) -> None:
+    def _on_connect(self, client, userdata, flags, rc, *args) -> None:
         """Handle MQTT connect event."""
         success = rc == 0
         _LOGGER.info("UNiNUS MQTT on_connect: rc=%s success=%s", rc, success)
         for cb in self._on_connect_callbacks:
-            cb(success)
+            try:
+                cb(success)
+            except Exception as err:
+                _LOGGER.error("Connect callback error: %s", err)
 
-    def _on_disconnect(
-        self, client: mqtt.Client, userdata: Any, flags: Any = None, rc: Any = 0, properties: Any = None
-    ) -> None:
+    def _on_disconnect(self, client, userdata, rc=0, *args) -> None:
         """Handle MQTT disconnect event."""
         _LOGGER.warning("UNiNUS MQTT disconnected: rc=%s", rc)
         for cb in self._on_connect_callbacks:
-            cb(False)
+            try:
+                cb(False)
+            except Exception:
+                pass
 
-    def _on_message(self, client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
+    def _on_message(self, client, userdata, msg) -> None:
         """Handle incoming MQTT message."""
         try:
             payload = msg.payload.decode("utf-8", errors="replace")
