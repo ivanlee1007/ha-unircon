@@ -31,6 +31,8 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._connected = false;
     this._batchRunning = false;
     this._neighbors = [];
+    this._cmdQueue = [];
+    this._waitingReply = false;
     // Restore broker settings from localStorage
     try {
       const s = localStorage.getItem("unircon_broker");
@@ -105,8 +107,13 @@ class UNiNUSConsoleCard extends HTMLElement {
 
   _pushTerminal(line) {
     if (!line) return;
-    this._terminalLines.unshift(String(line));
+    const str = String(line);
+    this._terminalLines.unshift(str);
     if (this._terminalLines.length > 500) this._terminalLines.pop();
+    // Sequential command queue: detect device response (non-echo line while waiting)
+    if (!str.startsWith("-->") && this._waitingReply) {
+      this._onDeviceResponse();
+    }
   }
 
   _pushStatus(line) {
@@ -317,14 +324,42 @@ class UNiNUSConsoleCard extends HTMLElement {
     // Add all lines to history
     this._commandHistory.push(...lines);
     this._historyIdx = this._commandHistory.length;
-    // Send each command with small delay
-    lines.forEach((cmd, i) => {
-      setTimeout(() => {
-        this._pushTerminal(`--> ${cmd}`);
-        this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
-      }, i * 200);
-    });
+    // Queue commands for sequential execution
+    lines.forEach(cmd => this._cmdQueue.push({ host, cmd }));
     inp.value = "";
+    this._processCmdQueue();
+    this._updateCmdButton();
+  }
+  _processCmdQueue() {
+    if (this._waitingReply || this._cmdQueue.length === 0) return;
+    const { host, cmd } = this._cmdQueue.shift();
+    this._waitingReply = true;
+    this._pushTerminal(`--> ${cmd}`);
+    this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
+    this._updateCmdButton();
+  }
+  _onCmdEcho(line) {
+    // Original echo format: '--[cmd]--' or '--> cmd'
+    if (this._waitingReply) return; // already tracking
+    // This is an echo from hotkey/batch, not from _processCmdQueue
+    // Nothing to do - these are fire-and-forget
+  }
+  _onDeviceResponse() {
+    if (this._waitingReply) {
+      this._waitingReply = false;
+      this._processCmdQueue();
+    }
+  }
+  _updateCmdButton() {
+    const btn = this.querySelector("#uc-send");
+    if (!btn) return;
+    if (this._cmdQueue.length > 0 || this._waitingReply) {
+      btn.textContent = `▶ ${this._cmdQueue.length} 等待中`;
+      btn.style.opacity = "0.7";
+    } else {
+      btn.textContent = "▶ 執行";
+      btn.style.opacity = "1";
+    }
   }
   _hotkey(cmd) {
     const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
@@ -481,7 +516,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.39";
+    const buildVersion = "1.0.40";
 
     this.innerHTML = `
     <style>
@@ -580,8 +615,11 @@ class UNiNUSConsoleCard extends HTMLElement {
             </div>
             <div class="ucblk" style="flex:0 0 220px;display:flex;flex-direction:column">
               <div class="uclbl">指令輸入</div>
-              <textarea id="uc-cmd" placeholder="每行一個指令&#10;Ctrl+Enter 送出&#10;↑↓ 歷史" style="flex:1;min-height:120px;font-family:monospace;font-size:12px;background:rgba(255,255,255,.08);color:inherit;border:1px solid var(--divider-color,#555);border-radius:3px;padding:4px;resize:vertical"></textarea>
-              <button id="uc-send" style="margin-top:6px;width:100%">▶ 執行</button>
+              <textarea id="uc-cmd" placeholder="每行一個指令&#10;Ctrl+Enter 送出&#10;Alt+↑↓ 歷史" style="flex:1;min-height:120px;font-family:monospace;font-size:12px;background:rgba(255,255,255,.08);color:inherit;border:1px solid var(--divider-color,#555);border-radius:3px;padding:4px;resize:vertical"></textarea>
+              <div style="display:flex;gap:8px;margin-top:6px">
+                <button id="uc-send" style="flex:1">▶ 執行</button>
+                <button id="uc-clr-cmd" style="flex:0;background:var(--error-color,#d9534f)">清空</button>
+              </div>
             </div>
           </div>
           <div class="ucblk">
@@ -697,6 +735,8 @@ class UNiNUSConsoleCard extends HTMLElement {
         if (e.key === "ArrowDown" && e.altKey) { e.preventDefault(); this._historyIdx = Math.min(this._commandHistory.length, this._historyIdx + 1); ci.value = this._commandHistory[this._historyIdx] || ""; }
       });
     }
+    const clrCmd = this.querySelector("#uc-clr-cmd");
+    if (clrCmd) clrCmd.addEventListener("click", () => { const i = this.querySelector("#uc-cmd"); if (i) i.value = ""; this._cmdQueue = []; this._waitingReply = false; this._updateCmdButton(); this._pushStatus("指令輸入已清空"); });
     this.querySelectorAll(".uhk button").forEach(b => {
       b.addEventListener("click", () => this._hotkey(b.dataset.cmd));
     });
