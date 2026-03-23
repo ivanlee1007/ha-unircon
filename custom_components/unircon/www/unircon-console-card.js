@@ -405,7 +405,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const lines = this._consoleLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.28";
+    const buildVersion = "1.0.29";
 
     this.innerHTML = `
     <style>

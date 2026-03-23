@@ -317,6 +317,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.async_add_executor_job(_pub)
 
     async def handle_collect_neighbors(call: ServiceCall) -> None:
+        import asyncio
+
         ok, err_text = await _ensure_backend_mqtt_connected("collect_neighbors")
         if not ok:
             detail = f": {err_text}" if err_text else ""
@@ -325,6 +327,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "service/collect_neighbors",
             )
             return
+
+        _fire_console_output(
+            "[MQTT] Refreshing backend URCON subscriptions before discovery...",
+            "service/collect_neighbors",
+        )
+
+        def _resubscribe_urcom() -> None:
+            mqtt_client.subscribe_urcom()
+
+        await hass.async_add_executor_job(_resubscribe_urcom)
+        await asyncio.sleep(0.5)
 
         requested_host_name = str(
             call.data.get(CONF_DISCOVERY_HOST_NAME, discovery_host_name)
