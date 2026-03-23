@@ -147,7 +147,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = device_data
 
     # Message handler
-    def _on_message(topic: str, payload: str) -> None:
+    def _handle_message_in_loop(topic: str, payload: str) -> None:
         try:
             try:
                 data = json.loads(payload)
@@ -156,8 +156,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
             if topic.startswith("ha/sub/") or topic.startswith("urcom/"):
                 if isinstance(data, dict) and data.get("type") in (13, 14):
-                    hass.bus.async_fire(
-                        f"{DOMAIN}_console",
+                    _emit_console_event(
                         {
                             "kind": "urcon_discovery",
                             "source": "backend_mqtt",
@@ -166,25 +165,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             "type": data.get("type"),
                             "topic": topic,
                             "data": data,
-                        },
+                        }
                     )
                     if data.get("type") == 14 and data.get("host"):
-                        hass.bus.async_fire(
-                            f"{DOMAIN}_console",
+                        _emit_console_event(
                             {
                                 "topic": topic,
                                 "data": {
                                     "output": f"[MQTT-RX] {topic} {payload[:300]}"
                                 },
-                            },
+                            }
                         )
                     return
-                hass.bus.async_fire(
-                    f"{DOMAIN}_console",
+                _emit_console_event(
                     {
                         "topic": topic,
                         "data": {"output": f"[MQTT-RX] {topic} {payload[:300]}"},
-                    },
+                    }
                 )
 
             for host in list(device_data[DATA_HOSTS]):
@@ -199,13 +196,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     if isinstance(data, dict) and "token" in data:
                         device_data[DATA_TOKENS][host] = data["token"]
 
-                    hass.bus.async_fire(
-                        f"{DOMAIN}_console",
-                        {"host": host, "topic": topic, "data": data},
+                    _emit_console_event(
+                        {"host": host, "topic": topic, "data": data}
                     )
                     break
         except Exception as err:
             _LOGGER.error("Message handling error: %s", err)
+
+    def _on_message(topic: str, payload: str) -> None:
+        hass.loop.call_soon_threadsafe(_handle_message_in_loop, topic, payload)
 
     mqtt_client.on_message(_on_message)
 
@@ -227,13 +226,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             err,
         )
 
-    def _fire_console_output(message: str, topic: str) -> None:
-        hass.bus.async_fire(
+    def _emit_console_event(event_data: dict[str, Any]) -> None:
+        hass.loop.call_soon_threadsafe(
+            hass.bus.async_fire,
             f"{DOMAIN}_console",
+            event_data,
+        )
+
+    def _fire_console_output(message: str, topic: str) -> None:
+        _emit_console_event(
             {
                 "topic": topic,
                 "data": {"output": message},
-            },
+            }
         )
 
     async def _ensure_backend_mqtt_connected(service_name: str) -> tuple[bool, str | None]:
