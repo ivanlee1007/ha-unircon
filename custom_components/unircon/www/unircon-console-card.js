@@ -160,7 +160,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     }
   }
 
-  _setupWsSocketHandlers(ws, b, url, remainingUrls) {
+  _setupWsSocketHandlers(ws, b, url, remainingUrls, tried = []) {
     let opened = false;
     this._mqtt = ws;
     this._wsFrameSeq = this._wsFrameSeq || 0;
@@ -247,36 +247,47 @@ class UNiNUSConsoleCard extends HTMLElement {
     ws.onclose = () => {
       this._connected = false;
       if (!opened && remainingUrls.length) {
+        tried.push(`${url} → connection closed`);
         const nextUrl = remainingUrls.shift();
         this._pushStatus(`[MQTT] WS connect failed, trying ${nextUrl}`);
-        this._tryMqttUrls(b, [nextUrl, ...remainingUrls]);
+        this._tryMqttUrls(b, [nextUrl, ...remainingUrls], tried);
         return;
+      }
+      if (!opened) {
+        tried.push(`${url} → connection closed`);
       }
       this._pushStatus("[MQTT] Disconnected");
       this._render();
     };
 
-    ws.onerror = () => {
+    ws.onerror = (e) => {
       this._connected = false;
-      if (!opened) return;
+      if (!opened) {
+        tried.push(`${url} → connection error`);
+        return;
+      }
       this._pushStatus("[MQTT] Connection error - check broker address/port");
       this._render();
     };
   }
 
-  _tryMqttUrls(b, urls) {
+  _tryMqttUrls(b, urls, tried = []) {
     if (!urls.length) {
-      this._pushStatus("[ERROR] MQTT WebSocket connect failed for all candidate URLs");
+      this._pushStatus(`[ERROR] MQTT WebSocket 所有候選 URL 連線失敗`);
+      tried.forEach(u => this._pushStatus(`[MQTT]   ✗ ${u}`));
+      this._pushStatus(`[MQTT] 💡 請確認：1) 埠號 ${b.port} 已開啟  2) 網域可從本機解析  3) 防火牆允許`);
       this._render();
       return;
     }
     const [url, ...remainingUrls] = urls;
     try {
       const ws = new WebSocket(url);
-      this._setupWsSocketHandlers(ws, b, url, remainingUrls);
+      this._pushStatus(`[MQTT] 嘗試連線: ${url}`);
+      this._setupWsSocketHandlers(ws, b, url, remainingUrls, tried);
     } catch (e) {
+      tried.push(`${url} → ${e.message}`);
       if (remainingUrls.length) {
-        this._tryMqttUrls(b, remainingUrls);
+        this._tryMqttUrls(b, remainingUrls, tried);
       } else {
         this._pushStatus(`[MQTT] Error: ${e.message}`);
         this._render();
@@ -606,7 +617,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.42";
+    const buildVersion = "1.0.43";
 
     this.innerHTML = `
     <style>
