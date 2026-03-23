@@ -63,23 +63,26 @@ class UNiNUSConsoleCard extends HTMLElement {
         const eventHost = payload.host || d.host;
         const eventIp = payload.ip || d.ip || "";
         const isDiscovery = d.kind === "urcon_discovery" || eventType === 13 || eventType === 14;
+        const isSelfDiscovery = isDiscovery && Number(eventType) === 13 && eventHost === "urcon";
 
-        if (isDiscovery && eventHost) {
+        if (isDiscovery && eventHost && !isSelfDiscovery) {
           if (!this._neighbors.includes(eventHost)) {
             this._neighbors.push(eventHost);
           }
         }
 
         let line = payload.output || "";
-        if (!line && isDiscovery && eventHost) {
+        if (!line && isDiscovery && eventHost && !isSelfDiscovery) {
           line = `[URCON] Discovered neighbor: ${eventHost} (${eventIp}) [src=${d.source || "event"}, type=${eventType}]`;
         }
-        if (!line) {
+        if (!line && !isSelfDiscovery) {
           line = JSON.stringify(d);
         }
 
-        this._consoleLines.push(line);
-        if (this._consoleLines.length > 500) this._consoleLines.shift();
+        if (line) {
+          this._consoleLines.push(line);
+          if (this._consoleLines.length > 500) this._consoleLines.shift();
+        }
         this._render();
       }, "unircon_console");
     }
@@ -365,7 +368,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       await new Promise(r => setTimeout(r, 2000));
       for (const cmd of cmds) {
         this._consoleLines.push(`[${host}] --> ${cmd}`);
-        this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
+        this._hass.callService("unircon", "send_command", { host, command: cmd }).catch(() => {});
         this._render();
         await new Promise(r => setTimeout(r, 1500));
       }
@@ -398,9 +401,24 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (!this.config.hosts) this.config.hosts = [];
     if (!this.config.hosts.includes(host)) {
       this.config.hosts.push(host);
+      this._hass.callService("unircon", "add_device", { host }).catch(() => {});
       this._consoleLines.push(`[URCON] Added ${host} to host list`);
       this._render();
     }
+  }
+
+  _addAllNeighbors() {
+    if (!this.config.hosts) this.config.hosts = [];
+    const pending = this._neighbors.filter((host) => !this.config.hosts.includes(host));
+    if (!pending.length) {
+      this._consoleLines.push("[URCON] 沒有新的鄰居可加入");
+      this._render();
+      return;
+    }
+    this.config.hosts.push(...pending);
+    pending.forEach((host) => this._hass.callService("unircon", "add_device", { host }).catch(() => {}));
+    this._consoleLines.push(`[URCON] Added ${pending.length} neighbors to host list: ${pending.join(", ")}`);
+    this._render();
   }
 
   // ===== Rendering =====
@@ -412,7 +430,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const lines = this._consoleLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.31";
+    const buildVersion = "1.0.33";
 
     this.innerHTML = `
     <style>
@@ -568,6 +586,7 @@ class UNiNUSConsoleCard extends HTMLElement {
         <hr style="border:none;border-top:1px dashed var(--divider-color,#ddd);margin:8px 0"/>
         <div>
           <button id="ms-neighbor" style="padding:5px 12px;background:#ff9800;color:#fff;border:none;border-radius:4px;cursor:pointer">🔍 蒐集 UNiNUS 鄰居</button>
+          <button id="ms-add-all-nb" style="padding:5px 10px;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-left:4px">加入全部鄰居</button>
           <button id="ms-clear-nb" style="padding:5px 10px;background:var(--secondary-text-color,#888);color:#fff;border:none;border-radius:4px;cursor:pointer;margin-left:4px">清除列表</button>
         </div>
         <div class="nblist" id="nb-list">
@@ -681,6 +700,8 @@ class UNiNUSConsoleCard extends HTMLElement {
     });
     const msNb = this.querySelector("#ms-neighbor");
     if (msNb) msNb.addEventListener("click", () => this._collectNeighbors());
+    const msAddAllNb = this.querySelector("#ms-add-all-nb");
+    if (msAddAllNb) msAddAllNb.addEventListener("click", () => this._addAllNeighbors());
     const msClearNb = this.querySelector("#ms-clear-nb");
     if (msClearNb) msClearNb.addEventListener("click", () => { this._neighbors = []; this._render(); });
     // Add neighbor buttons
@@ -694,9 +715,9 @@ if (!customElements.get("unircon-console-card")) {
   customElements.define("unircon-console-card", UNiNUSConsoleCard);
 }
 window.customCards = window.customCards || [];
-if (!window.customCards.some((card) => card.type === "unircon-console-card")) {
+if (!window.customCards.some((card) => card.type === "custom:unircon-console-card")) {
   window.customCards.push({
-    type: "unircon-console-card",
+    type: "custom:unircon-console-card",
     name: "UNiNUS Remote Console Card",
     description: "UNiNUS MQTT remote console dashboard card (bundled with ha-unircon)",
   });

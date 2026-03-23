@@ -177,12 +177,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             }
                         )
                     return
-                _emit_console_event(
-                    {
-                        "topic": topic,
-                        "data": {"output": f"[MQTT-RX] {topic} {payload[:300]}"},
-                    }
-                )
 
             for host in list(device_data[DATA_HOSTS]):
                 if f"/{host}/console/" in topic or f"pubrsp/{host}" in topic:
