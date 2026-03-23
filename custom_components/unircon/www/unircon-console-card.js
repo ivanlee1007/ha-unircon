@@ -97,6 +97,10 @@ class UNiNUSConsoleCard extends HTMLElement {
 
   _persistBrokerSettings(showMessage = true) {
     this._broker = this._readBrokerInputs();
+    if (!this._broker.host) {
+      this._consoleLines.push("[ERROR] MQTT broker host is empty");
+      return false;
+    }
     try {
       localStorage.setItem("unircon_broker", JSON.stringify(this._broker));
       if (showMessage) this._consoleLines.push(`[MQTT] Settings saved (${this._broker.host}:${this._broker.port})`);
@@ -593,6 +597,21 @@ class UNiNUSConsoleCard extends HTMLElement {
     });
 
     // MQTT settings (Phase 5)
+    const bindBrokerField = (selector, key, parser = (v) => v) => {
+      const el = this.querySelector(selector);
+      if (!el) return;
+      const update = () => {
+        this._broker[key] = parser(el.value);
+      };
+      el.addEventListener("input", update);
+      el.addEventListener("change", update);
+    };
+    bindBrokerField("#ms-host", "host", (v) => (v || "").trim());
+    bindBrokerField("#ms-port", "port", (v) => parseInt(v, 10) || 1884);
+    bindBrokerField("#ms-user", "username");
+    bindBrokerField("#ms-pass", "password");
+    bindBrokerField("#ms-domain", "domain", (v) => (v || "").trim() || "uninus");
+
     const msSave = this.querySelector("#ms-save");
     if (msSave) msSave.addEventListener("click", () => {
       this._persistBrokerSettings(true);
