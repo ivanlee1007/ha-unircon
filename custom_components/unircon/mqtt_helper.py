@@ -85,6 +85,7 @@ class UNiNUSMQTT:
                 raise RuntimeError(self._last_connect_error or f"MQTT connect rejected by {self._host}:{self._port}")
             _LOGGER.info("UNiNUS MQTT connected to %s:%s", self._host, self._port)
         except Exception as err:
+            self._last_connect_error = str(err)
             _LOGGER.error("UNiNUS MQTT connect failed: %s", err)
             try:
                 if self._client:
@@ -188,6 +189,10 @@ class UNiNUSMQTT:
             return self._client is not None and self._client.is_connected()
         except Exception:
             return False
+
+    @property
+    def last_connect_error(self) -> str | None:
+        return self._last_connect_error
 
     def on_message(self, callback: Callable[[str, str], None]) -> None:
         """Register a callback for incoming messages."""

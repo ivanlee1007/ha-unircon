@@ -199,9 +199,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             err,
         )
 
-    async def _ensure_backend_mqtt_connected() -> bool:
+    async def _ensure_backend_mqtt_connected() -> tuple[bool, str | None]:
         if mqtt_client.is_connected:
-            return True
+            return True, None
 
         try:
             await hass.async_add_executor_job(mqtt_client.connect)
@@ -212,10 +212,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 mqtt_client.subscribe_urcom()
 
             await hass.async_add_executor_job(_resubscribe)
-            return True
+            return True, None
         except Exception as err:
             _LOGGER.error("Backend MQTT reconnect failed: %s", err)
-            return False
+            return False, (mqtt_client.last_connect_error or str(err))
 
     # ===== Services =====
     async def handle_send_command(call: ServiceCall) -> None:
@@ -258,13 +258,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "data": {"output": f"[MQTT] Backend not connected, reconnecting to {broker_host}:{broker_port}..."},
                 },
             )
-            ok = await _ensure_backend_mqtt_connected()
+            ok, err_text = await _ensure_backend_mqtt_connected()
             if not ok:
+                detail = f": {err_text}" if err_text else ""
                 hass.bus.async_fire(
                     f"{DOMAIN}_console",
                     {
                         "topic": "service/collect_neighbors",
-                        "data": {"output": f"[ERROR] Backend MQTT reconnect failed; neighbor discovery not sent ({broker_host}:{broker_port})"},
+                        "data": {"output": f"[ERROR] Backend MQTT reconnect failed; neighbor discovery not sent ({broker_host}:{broker_port}){detail}"},
                     },
                 )
                 return
