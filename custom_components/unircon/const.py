@@ -29,3 +29,7 @@ PLATFORMS = ["sensor", "button", "text"]
 # Device state
 STATE_ONLINE = "online"
 STATE_OFFLINE = "offline"
+
+# Runtime data keys
+DATA_CONSOLE_HISTORY = "console_history"
+DATA_TOKENS = "tokens"
