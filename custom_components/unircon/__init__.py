@@ -8,6 +8,7 @@ import os
 from typing import Any
 
 from homeassistant.components import frontend
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -96,8 +97,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Register static path for card (Phase 2+)
     www_dir = os.path.join(os.path.dirname(__file__), "www")
     if os.path.isdir(www_dir):
-        hass.http.register_static_path(
-            "/unircon-static", www_dir, cache_headers=True
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig("/unircon-static", www_dir, cache_headers=True)]
         )
         # Register as frontend module for auto-loading
         try:
