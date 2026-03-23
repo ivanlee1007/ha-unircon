@@ -311,12 +311,19 @@ class UNiNUSConsoleCard extends HTMLElement {
   _sendCmd() {
     const inp = this.querySelector("#uc-cmd");
     if (!inp || !inp.value.trim()) return;
-    const cmd = inp.value.trim();
-    this._commandHistory.push(cmd);
-    this._historyIdx = this._commandHistory.length;
+    const lines = inp.value.split("\n").map(l => l.trim()).filter(l => l);
+    if (lines.length === 0) return;
     const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
-    this._pushTerminal(`--> ${cmd}`);
-    this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
+    // Add all lines to history
+    this._commandHistory.push(...lines);
+    this._historyIdx = this._commandHistory.length;
+    // Send each command with small delay
+    lines.forEach((cmd, i) => {
+      setTimeout(() => {
+        this._pushTerminal(`--> ${cmd}`);
+        this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
+      }, i * 200);
+    });
     inp.value = "";
   }
   _hotkey(cmd) {
@@ -474,7 +481,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.38";
+    const buildVersion = "1.0.39";
 
     this.innerHTML = `
     <style>
@@ -560,15 +567,22 @@ class UNiNUSConsoleCard extends HTMLElement {
           <button data-cmd="show run">show run</button>
         </div>
         <div class="ucns">
-          <div class="ucblk">
-            <div class="uclbl">
-              <span>訊息輸出 (Console Output)</span>
-              <input id="uc-cmd" placeholder="輸入指令 (Ctrl+Enter ↑↓)" style="flex:1;margin:0 6px;min-width:80px;font-family:monospace;font-size:12px;height:24px;background:rgba(255,255,255,.08);color:inherit;border:1px solid var(--divider-color,#555);border-radius:3px;padding:0 4px"/>
-              <button id="uc-send" style="white-space:nowrap">執行</button>
-              <button id="uc-dl-out" title="下載輸出" style="margin-left:4px">📥</button>
-              <button id="uc-clr-out" title="清除輸出">🗑️</button>
+          <div style="display:flex;gap:8px">
+            <div class="ucblk" style="flex:1;min-width:0">
+              <div class="uclbl">
+                <span>訊息輸出 (Console Output)</span>
+                <span style="margin-left:auto;display:flex;gap:4px">
+                  <button id="uc-dl-out" title="下載輸出">📥</button>
+                  <button id="uc-clr-out" title="清除輸出">🗑️</button>
+                </span>
+              </div>
+              <textarea id="uc-out" readonly style="height:440px">${this._E(terminalLines)}</textarea>
             </div>
-            <textarea id="uc-out" readonly>${this._E(terminalLines)}</textarea>
+            <div class="ucblk" style="flex:0 0 220px;display:flex;flex-direction:column">
+              <div class="uclbl">指令輸入</div>
+              <textarea id="uc-cmd" placeholder="每行一個指令&#10;Ctrl+Enter 送出&#10;↑↓ 歷史" style="flex:1;min-height:120px;font-family:monospace;font-size:12px;background:rgba(255,255,255,.08);color:inherit;border:1px solid var(--divider-color,#555);border-radius:3px;padding:4px;resize:vertical"></textarea>
+              <button id="uc-send" style="margin-top:6px;width:100%">▶ 執行</button>
+            </div>
           </div>
           <div class="ucblk">
             <div class="uclbl">狀態訊息 (Stat Message)</div>
@@ -679,14 +693,8 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (ci) {
       ci.addEventListener("keydown", e => {
         if (e.key === "Enter" && e.ctrlKey) { e.preventDefault(); this._sendCmd(); }
-        if (e.key === "ArrowUp" && this._commandHistory.length) {
-          this._historyIdx = Math.max(0, this._historyIdx - 1);
-          ci.value = this._commandHistory[this._historyIdx] || "";
-        }
-        if (e.key === "ArrowDown") {
-          this._historyIdx = Math.min(this._commandHistory.length, this._historyIdx + 1);
-          ci.value = this._commandHistory[this._historyIdx] || "";
-        }
+        if (e.key === "ArrowUp" && e.altKey && this._commandHistory.length) { e.preventDefault(); this._historyIdx = Math.max(0, this._historyIdx - 1); ci.value = this._commandHistory[this._historyIdx] || ""; }
+        if (e.key === "ArrowDown" && e.altKey) { e.preventDefault(); this._historyIdx = Math.min(this._commandHistory.length, this._historyIdx + 1); ci.value = this._commandHistory[this._historyIdx] || ""; }
       });
     }
     this.querySelectorAll(".uhk button").forEach(b => {
