@@ -228,10 +228,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.async_add_executor_job(_pub)
 
     async def handle_collect_neighbors(call: ServiceCall) -> None:
+        if not mqtt_client.is_connected:
+            hass.bus.async_fire(
+                f"{DOMAIN}_console",
+                {
+                    "topic": "service/collect_neighbors",
+                    "data": {"output": "[ERROR] Backend MQTT not connected; neighbor discovery not sent"},
+                },
+            )
+            return
+
         def _collect() -> None:
             mqtt_client.collect_neighbors()
 
-        await hass.async_add_executor_job(_collect)
+        try:
+            await hass.async_add_executor_job(_collect)
+            hass.bus.async_fire(
+                f"{DOMAIN}_console",
+                {
+                    "topic": "service/collect_neighbors",
+                    "data": {"output": f"[URCON] Neighbor discovery sent via backend MQTT ({broker_host}:{broker_port})"},
+                },
+            )
+        except Exception as err:
+            hass.bus.async_fire(
+                f"{DOMAIN}_console",
+                {
+                    "topic": "service/collect_neighbors",
+                    "data": {"output": f"[ERROR] Neighbor discovery failed: {err}"},
+                },
+            )
 
     async def handle_batch_command(call: ServiceCall) -> None:
         hosts_list = call.data.get("hosts", [])
