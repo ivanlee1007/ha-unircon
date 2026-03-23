@@ -82,19 +82,20 @@ class UNiNUSConsoleSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Register event listener."""
-        self._hass.bus.async_listen(f"{DOMAIN}_console", self._handle_message)
+        self.async_on_remove(
+            self._hass.bus.async_listen(f"{DOMAIN}_console", self._handle_message)
+        )
 
     async def async_update(self) -> None:
         """Update sensor state."""
         data = self._hass.data[DOMAIN][self._entry.entry_id]
         history = data.get(DATA_CONSOLE_HISTORY, {}).get(self._host, [])
         if history:
-            last = history[-1]
-            line = last.get("line", "")
-            if isinstance(line, dict):
-                line = json.dumps(line, ensure_ascii=False)
-            self._attr_native_value = str(line)[:200]
-            self._attr_extra_state_attributes["history_count"] = len(history)
+            lines = [str(item.get("line", "")) for item in history[-200:]]
+            last = lines[-1]
+            self._attr_native_value = last[:200]
+            self._attr_extra_state_attributes["history"] = lines
+            self._attr_extra_state_attributes["history_count"] = len(lines)
 
 
 class UNiNUSStatusSensor(SensorEntity):
@@ -121,7 +122,9 @@ class UNiNUSStatusSensor(SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         """Register event listener."""
-        self._hass.bus.async_listen(f"{DOMAIN}_console", self._handle_message)
+        self.async_on_remove(
+            self._hass.bus.async_listen(f"{DOMAIN}_console", self._handle_message)
+        )
 
     async def async_update(self) -> None:
         """Update sensor state."""

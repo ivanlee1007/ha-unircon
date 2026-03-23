@@ -4,7 +4,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 
 ## 功能
 
-- **Config Flow**：HA UI 一鍵設定 MQTT Broker + 設備清單
+- **Config Flow**：HA UI 一鍵設定 MQTT Broker + 設備清單（目前單一實例）
 - **Console Sensor**：每台設備的即時 console 輸出
 - **Status Sensor**：設備連線狀態
 - **Token Text**：設備序號顯示與手動設定
@@ -84,7 +84,7 @@ broker:
 
 Card MQTT WebSocket 連線設定存在瀏覽器 localStorage，不影響 HA 後端。
 
-注意：HA integration 後端服務（例如 `collect_neighbors`、`send_command`）使用的是原生 MQTT/TCP，不是瀏覽器 WebSocket。UNiNUS 這套環境請優先設定 broker port 為 `1883`。若你要在卡片前端直接走 WebSocket，再另外填對應的 WS port/path。
+注意：HA integration 後端服務（例如 `collect_neighbors`、`send_command`）使用的是原生 MQTT/TCP，不是瀏覽器 WebSocket。UNiNUS 這套環境請優先設定 broker port 為 `1883`。若你要在卡片前端直接走 WebSocket，再另外填對應的 WS port/path。後端 service 現在會在需要時自動重連 MQTT；透過 `unircon.add_device` 新增的主機也會持久寫回整合設定，不會因 reload 消失。
 
 ## 自動化範例
 

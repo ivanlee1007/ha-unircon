@@ -62,7 +62,9 @@ class UNiNUSTokenText(TextEntity):
 
     async def async_added_to_hass(self) -> None:
         """Register event listener."""
-        self._hass.bus.async_listen(f"{DOMAIN}_console", self._handle_message)
+        self.async_on_remove(
+            self._hass.bus.async_listen(f"{DOMAIN}_console", self._handle_message)
+        )
 
     async def async_update(self) -> None:
         """Update from stored data."""

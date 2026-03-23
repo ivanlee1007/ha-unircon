@@ -23,6 +23,7 @@ from .const import (
     CONF_HOSTS,
     CONF_PASSWORD,
     CONF_USERNAME,
+    DEFAULT_BROKER_PORT,
     DOMAIN,
 )
 from .mqtt_helper import UNiNUSMQTT
@@ -112,7 +113,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     config = entry.data
     broker_host = config[CONF_BROKER_HOST]
-    broker_port = int(config.get("broker_port", 1883))
+    broker_port = int(config.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT))
     username = config[CONF_USERNAME]
     password = config[CONF_PASSWORD]
     urcon_domain = config.get(CONF_DOMAIN, "uninus")
@@ -159,7 +160,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 )
                 return
 
-            for host in hosts:
+            for host in list(device_data[DATA_HOSTS]):
                 if f"/{host}/console/" in topic or f"pubrsp/{host}" in topic:
                     history = device_data[DATA_CONSOLE_HISTORY].get(host, [])
                     line = data.get("data", {}).get("output", payload) if isinstance(data, dict) else payload
@@ -199,9 +200,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             err,
         )
 
-    async def _ensure_backend_mqtt_connected() -> tuple[bool, str | None]:
+    def _fire_console_output(message: str, topic: str) -> None:
+        hass.bus.async_fire(
+            f"{DOMAIN}_console",
+            {
+                "topic": topic,
+                "data": {"output": message},
+            },
+        )
+
+    async def _ensure_backend_mqtt_connected(service_name: str) -> tuple[bool, str | None]:
         if mqtt_client.is_connected:
             return True, None
+
+        _fire_console_output(
+            f"[MQTT] Backend not connected, reconnecting to {broker_host}:{broker_port}...",
+            f"service/{service_name}",
+        )
 
         try:
             await hass.async_add_executor_job(mqtt_client.connect)
@@ -212,6 +227,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 mqtt_client.subscribe_urcom()
 
             await hass.async_add_executor_job(_resubscribe)
+            _fire_console_output(
+                f"[MQTT] Backend reconnected to {broker_host}:{broker_port}",
+                f"service/{service_name}",
+            )
             return True, None
         except Exception as err:
             _LOGGER.error("Backend MQTT reconnect failed: %s", err)
@@ -222,8 +241,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         host = call.data.get("host", "")
         command = call.data.get("command", "")
         token = call.data.get("token", "")
+        if not host or not command:
+            return
         if not token:
             token = device_data[DATA_TOKENS].get(host, "00000000")
+
+        ok, err_text = await _ensure_backend_mqtt_connected("send_command")
+        if not ok:
+            detail = f": {err_text}" if err_text else ""
+            _fire_console_output(
+                f"[ERROR] Backend MQTT reconnect failed; command not sent ({broker_host}:{broker_port}){detail}",
+                "service/send_command",
+            )
+            return
 
         def _send() -> None:
             mqtt_client.send_command(host, token, command)
@@ -234,6 +264,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         host = call.data.get("host", "")
         user = call.data.get("username", config.get(CONF_USERNAME, "admin"))
         pw = call.data.get("password", config.get(CONF_PASSWORD, ""))
+        if not host:
+            return
+
+        ok, err_text = await _ensure_backend_mqtt_connected("request_token")
+        if not ok:
+            detail = f": {err_text}" if err_text else ""
+            _fire_console_output(
+                f"[ERROR] Backend MQTT reconnect failed; token request not sent ({broker_host}:{broker_port}){detail}",
+                "service/request_token",
+            )
+            return
 
         def _req() -> None:
             mqtt_client.request_token(host, user, pw)
@@ -243,6 +284,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_mqtt_publish(call: ServiceCall) -> None:
         topic = call.data.get("topic", "")
         payload = call.data.get("payload", "")
+        if not topic:
+            return
+
+        ok, err_text = await _ensure_backend_mqtt_connected("mqtt_publish")
+        if not ok:
+            detail = f": {err_text}" if err_text else ""
+            _fire_console_output(
+                f"[ERROR] Backend MQTT reconnect failed; publish not sent ({broker_host}:{broker_port}){detail}",
+                "service/mqtt_publish",
+            )
+            return
 
         def _pub() -> None:
             mqtt_client.publish_test(topic, payload)
@@ -250,52 +302,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await hass.async_add_executor_job(_pub)
 
     async def handle_collect_neighbors(call: ServiceCall) -> None:
-        if not mqtt_client.is_connected:
-            hass.bus.async_fire(
-                f"{DOMAIN}_console",
-                {
-                    "topic": "service/collect_neighbors",
-                    "data": {"output": f"[MQTT] Backend not connected, reconnecting to {broker_host}:{broker_port}..."},
-                },
+        ok, err_text = await _ensure_backend_mqtt_connected("collect_neighbors")
+        if not ok:
+            detail = f": {err_text}" if err_text else ""
+            _fire_console_output(
+                f"[ERROR] Backend MQTT reconnect failed; neighbor discovery not sent ({broker_host}:{broker_port}){detail}",
+                "service/collect_neighbors",
             )
-            ok, err_text = await _ensure_backend_mqtt_connected()
-            if not ok:
-                detail = f": {err_text}" if err_text else ""
-                hass.bus.async_fire(
-                    f"{DOMAIN}_console",
-                    {
-                        "topic": "service/collect_neighbors",
-                        "data": {"output": f"[ERROR] Backend MQTT reconnect failed; neighbor discovery not sent ({broker_host}:{broker_port}){detail}"},
-                    },
-                )
-                return
-            hass.bus.async_fire(
-                f"{DOMAIN}_console",
-                {
-                    "topic": "service/collect_neighbors",
-                    "data": {"output": f"[MQTT] Backend reconnected to {broker_host}:{broker_port}"},
-                },
-            )
+            return
 
         def _collect() -> None:
             mqtt_client.collect_neighbors()
 
         try:
             await hass.async_add_executor_job(_collect)
-            hass.bus.async_fire(
-                f"{DOMAIN}_console",
-                {
-                    "topic": "service/collect_neighbors",
-                    "data": {"output": f"[URCON] Neighbor discovery sent via backend MQTT ({broker_host}:{broker_port})"},
-                },
+            _fire_console_output(
+                f"[URCON] Neighbor discovery sent via backend MQTT ({broker_host}:{broker_port})",
+                "service/collect_neighbors",
             )
         except Exception as err:
-            hass.bus.async_fire(
-                f"{DOMAIN}_console",
-                {
-                    "topic": "service/collect_neighbors",
-                    "data": {"output": f"[ERROR] Neighbor discovery failed: {err}"},
-                },
+            _fire_console_output(
+                f"[ERROR] Neighbor discovery failed: {err}",
+                "service/collect_neighbors",
             )
 
     async def handle_batch_command(call: ServiceCall) -> None:
@@ -304,6 +332,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         delay = int(call.data.get("delay", 1))
 
         import asyncio
+
+        ok, err_text = await _ensure_backend_mqtt_connected("batch_command")
+        if not ok:
+            detail = f": {err_text}" if err_text else ""
+            _fire_console_output(
+                f"[ERROR] Backend MQTT reconnect failed; batch not started ({broker_host}:{broker_port}){detail}",
+                "service/batch_command",
+            )
+            return
 
         for host in hosts_list:
             token = device_data[DATA_TOKENS].get(host, "00000000")
@@ -321,28 +358,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def handle_add_device(call: ServiceCall) -> None:
         """Add a new device to the running config."""
-        new_host = call.data.get("host", "")
-        if not new_host or new_host in device_data[DATA_HOSTS]:
+        new_host = str(call.data.get("host", "")).strip()
+        if not new_host:
             return
-        device_data[DATA_HOSTS].append(new_host)
+        if new_host in device_data[DATA_HOSTS]:
+            _fire_console_output(f"[INFO] Host already exists: {new_host}", "service/add_device")
+            return
+
+        updated_hosts = [*device_data[DATA_HOSTS], new_host]
+        device_data[DATA_HOSTS] = updated_hosts
         device_data[DATA_CONSOLE_HISTORY][new_host] = []
 
-        def _sub_single() -> None:
-            mqtt_client.subscribe_devices([new_host])
+        self_data = {**entry.data, CONF_HOSTS: updated_hosts}
+        hass.config_entries.async_update_entry(entry, data=self_data)
 
-        await hass.async_add_executor_job(_sub_single)
+        if mqtt_client.is_connected:
+            def _sub_single() -> None:
+                mqtt_client.subscribe_devices([new_host])
+
+            await hass.async_add_executor_job(_sub_single)
+
+        _fire_console_output(f"[INFO] Added device: {new_host}", "service/add_device")
         _LOGGER.info("Added new device: %s", new_host)
 
-        # Reload platforms to create entities for new device
+        # Reload platforms to create persistent entities for new device.
         await hass.config_entries.async_reload(entry.entry_id)
 
-    hass.services.async_register(DOMAIN, "send_command", handle_send_command)
-    hass.services.async_register(DOMAIN, "request_token", handle_request_token)
-    hass.services.async_register(DOMAIN, "mqtt_publish", handle_mqtt_publish)
-    hass.services.async_register(DOMAIN, "collect_neighbors", handle_collect_neighbors)
-    hass.services.async_register(DOMAIN, "batch_command", handle_batch_command)
-    hass.services.async_register(DOMAIN, "generate_deploy", handle_generate_deploy)
-    hass.services.async_register(DOMAIN, "add_device", handle_add_device)
+    if not hass.services.has_service(DOMAIN, "send_command"):
+        hass.services.async_register(DOMAIN, "send_command", handle_send_command)
+        hass.services.async_register(DOMAIN, "request_token", handle_request_token)
+        hass.services.async_register(DOMAIN, "mqtt_publish", handle_mqtt_publish)
+        hass.services.async_register(DOMAIN, "collect_neighbors", handle_collect_neighbors)
+        hass.services.async_register(DOMAIN, "batch_command", handle_batch_command)
+        hass.services.async_register(DOMAIN, "generate_deploy", handle_generate_deploy)
+        hass.services.async_register(DOMAIN, "add_device", handle_add_device)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -360,9 +409,21 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if mqtt_client:
                 await hass.async_add_executor_job(mqtt_client.disconnect)
 
-    if not hass.data.get(DOMAIN):
-        for svc in ["send_command", "request_token", "mqtt_publish",
-                     "collect_neighbors", "batch_command", "generate_deploy", "add_device"]:
-            hass.services.async_remove(DOMAIN, svc)
+    remaining_entry_data = [
+        value for value in hass.data.get(DOMAIN, {}).values()
+        if isinstance(value, dict) and DATA_MQTT in value
+    ]
+    if not remaining_entry_data:
+        for svc in [
+            "send_command",
+            "request_token",
+            "mqtt_publish",
+            "collect_neighbors",
+            "batch_command",
+            "generate_deploy",
+            "add_device",
+        ]:
+            if hass.services.has_service(DOMAIN, svc):
+                hass.services.async_remove(DOMAIN, svc)
 
     return unload_ok

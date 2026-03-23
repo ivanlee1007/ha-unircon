@@ -34,6 +34,7 @@
     },
     "abort": {
       "already_configured": "此 MQTT Broker 已設定過。",
+      "single_instance_allowed": "UNiNUS Remote Console 目前只支援一個整合實例。",
       "reauth_successful": "重新驗證成功。"
     }
   },

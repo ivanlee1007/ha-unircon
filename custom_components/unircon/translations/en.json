@@ -34,6 +34,7 @@
     },
     "abort": {
       "already_configured": "This MQTT Broker is already configured.",
+      "single_instance_allowed": "Only one UNiNUS Remote Console instance is supported.",
       "reauth_successful": "Re-authentication successful."
     }
   },

@@ -63,7 +63,6 @@ class UNiNUSCommandButton(ButtonEntity):
     async def async_press(self) -> None:
         """Press the button - send command to device."""
         data = self._hass.data[DOMAIN][self._entry.entry_id]
-        mqtt_client = data["mqtt"]
         token = data.get(DATA_TOKENS, {}).get(self._host, "00000000")
         config = self._entry.data
 
@@ -73,8 +72,10 @@ class UNiNUSCommandButton(ButtonEntity):
             password=config.get("password", ""),
         )
 
-        def _send() -> None:
-            mqtt_client.send_command(self._host, token, cmd)
-
-        await self._hass.async_add_executor_job(_send)
+        await self._hass.services.async_call(
+            DOMAIN,
+            "send_command",
+            {"host": self._host, "command": cmd, "token": token},
+            blocking=True,
+        )
         _LOGGER.info("Button pressed: %s → %s", self._attr_name, cmd)

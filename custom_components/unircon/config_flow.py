@@ -22,6 +22,7 @@ from .const import (
     DEFAULT_SUBSCRIBE_TOPIC,
     DOMAIN,
 )
+from .mqtt_helper import UNiNUSMQTT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,57 +42,34 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step - MQTT broker connection."""
         errors: dict[str, str] = {}
 
+        if self._async_current_entries():
+            return self.async_abort(reason="single_instance_allowed")
+
         if user_input is not None:
-            # Validate MQTT connection
             try:
-                def _test_mqtt() -> tuple[bool, str]:
+                broker_host = user_input[CONF_BROKER_HOST]
+                broker_port = int(user_input.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT))
+                username = user_input.get(CONF_USERNAME, "")
+                password = user_input.get(CONF_PASSWORD, "")
+                urcon_domain = user_input.get(CONF_DOMAIN, DEFAULT_DOMAIN)
+
+                def _test_mqtt() -> None:
+                    client = UNiNUSMQTT(
+                        host=broker_host,
+                        port=broker_port,
+                        username=username,
+                        password=password,
+                        urcon_domain=urcon_domain,
+                        host_name="ha-unircon-setup",
+                    )
                     try:
-                        import paho.mqtt.client as mqtt
-                    except ImportError:
-                        return False, "paho_mqtt_not_installed"
-
-                    # Use v2 API if available (paho-mqtt >= 2.0), fallback to v1
-                    try:
-                        client = mqtt.Client(
-                            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                            client_id="ha-unircon-setup",
-                            socket_timeout=10,
-                        )
-                    except (AttributeError, TypeError):
-                        # paho-mqtt 1.x - no callback_api_version or socket_timeout
-                        client = mqtt.Client(
-                            client_id="ha-unircon-setup",
-                        )
-
-                    username = user_input.get(CONF_USERNAME, "")
-                    password = user_input.get(CONF_PASSWORD, "")
-                    if username:
-                        client.username_pw_set(username, password)
-
-                    broker_host = user_input[CONF_BROKER_HOST]
-                    broker_port = int(user_input.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT))
-
-                    try:
-                        client.connect(broker_host, broker_port)
+                        client.connect()
+                    finally:
                         client.disconnect()
-                        return True, ""
-                    except ConnectionRefusedError:
-                        return False, "cannot_connect"
-                    except OSError as err:
-                        # EHOSTUNREACH, ETIMEDOUT, etc.
-                        return False, f"cannot_connect: {err}"
-                    except Exception as err:
-                        return False, str(err)
 
-                ok, err = await self.hass.async_add_executor_job(_test_mqtt)
-                if not ok:
-                    _LOGGER.warning("MQTT test failed: %s", err)
-                    if "paho_mqtt" in err:
-                        errors["base"] = "cannot_connect"
-                    else:
-                        errors["base"] = "cannot_connect"
+                await self.hass.async_add_executor_job(_test_mqtt)
             except Exception as err:
-                _LOGGER.exception("MQTT validation error: %s", err)
+                _LOGGER.warning("MQTT validation error: %s", err)
                 errors["base"] = "cannot_connect"
 
             if not errors:
