@@ -138,20 +138,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     hass.data[DOMAIN][entry.entry_id] = device_data
 
-    # Connect MQTT
-    def _connect() -> None:
-        mqtt_client.connect()
-
-    await hass.async_add_executor_job(_connect)
-
-    # Subscribe to device topics
-    def _subscribe() -> None:
-        if hosts:
-            mqtt_client.subscribe_devices(hosts)
-        mqtt_client.subscribe_urcom()
-
-    await hass.async_add_executor_job(_subscribe)
-
     # Message handler
     def _on_message(topic: str, payload: str) -> None:
         try:
@@ -194,6 +180,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.error("Message handling error: %s", err)
 
     mqtt_client.on_message(_on_message)
+
+    # Best-effort initial connect: do not abort entry setup if broker is unavailable.
+    try:
+        await hass.async_add_executor_job(mqtt_client.connect)
+
+        def _subscribe() -> None:
+            if hosts:
+                mqtt_client.subscribe_devices(hosts)
+            mqtt_client.subscribe_urcom()
+
+        await hass.async_add_executor_job(_subscribe)
+    except Exception as err:
+        _LOGGER.warning(
+            "Initial MQTT connect failed for %s:%s; integration will stay loaded and retry on demand: %s",
+            broker_host,
+            broker_port,
+            err,
+        )
 
     async def _ensure_backend_mqtt_connected() -> bool:
         if mqtt_client.is_connected:
