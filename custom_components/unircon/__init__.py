@@ -15,6 +15,8 @@ from homeassistant.core import HomeAssistant, ServiceCall
 import voluptuous as vol
 
 from .const import (
+    CARD_RESOURCE_URL,
+    CARD_STATIC_URL,
     CONF_BROKER_HOST,
     CONF_BROKER_PORT,
     CONF_DOMAIN,
@@ -29,8 +31,6 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR, Platform.BUTTON, Platform.TEXT]
 
-CARD_URL = "/unircon-static/unircon-console-card.js"
-
 DATA_MQTT = "mqtt"
 DATA_HOSTS = "hosts"
 DATA_TOKENS = "tokens"
@@ -42,18 +42,19 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     domain_data = hass.data.setdefault(DOMAIN, {})
 
     if not domain_data.get("card_static_registered"):
-        www_dir = os.path.join(os.path.dirname(__file__), "www")
-        if os.path.isdir(www_dir):
+        card_path = os.path.join(os.path.dirname(__file__), "www", "unircon-console-card.js")
+        if os.path.isfile(card_path):
             await hass.http.async_register_static_paths(
-                [StaticPathConfig("/unircon-static", www_dir, cache_headers=False)]
+                [StaticPathConfig(CARD_STATIC_URL, card_path, cache_headers=False)]
             )
             domain_data["card_static_registered"] = True
-            _LOGGER.info("Registered unircon card static path at /unircon-static")
+            domain_data["card_resource_url"] = CARD_RESOURCE_URL
+            _LOGGER.info("Registered unircon card static path at %s", CARD_STATIC_URL)
 
     if not domain_data.get("card_resource_registered"):
-        frontend.add_extra_js_url(hass, CARD_URL)
+        frontend.add_extra_js_url(hass, domain_data.get("card_resource_url", CARD_RESOURCE_URL))
         domain_data["card_resource_registered"] = True
-        _LOGGER.info("Auto-loaded unircon card resource: %s", CARD_URL)
+        _LOGGER.info("Auto-loaded unircon card resource: %s", domain_data.get("card_resource_url", CARD_RESOURCE_URL))
 
     return True
 

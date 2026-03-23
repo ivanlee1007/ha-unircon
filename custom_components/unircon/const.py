@@ -2,6 +2,11 @@
 
 DOMAIN = "unircon"
 
+CARD_JS_FILENAME = "unircon-console-card.js"
+CARD_STATIC_URL = f"/{DOMAIN}_static/{CARD_JS_FILENAME}"
+CARD_RESOURCE_VERSION = "1.0.11"
+CARD_RESOURCE_URL = f"{CARD_STATIC_URL}?v={CARD_RESOURCE_VERSION}"
+
 # Config keys
 CONF_BROKER_HOST = "broker_host"
 CONF_BROKER_PORT = "broker_port"
