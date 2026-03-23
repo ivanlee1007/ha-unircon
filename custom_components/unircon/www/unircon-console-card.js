@@ -474,7 +474,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.37";
+    const buildVersion = "1.0.38";
 
     this.innerHTML = `
     <style>
@@ -501,7 +501,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       .uhk button:hover{background:var(--primary-color,#03a9f4);color:#fff}
       .ucns{margin:6px 10px}
       .ucblk{margin-bottom:8px}
-      .uclbl{font-size:12px;font-weight:700;color:var(--secondary-text-color,#666);margin:0 0 4px 0}
+      .uclbl{font-size:12px;font-weight:700;color:var(--secondary-text-color,#666);margin:0 0 4px 0;display:flex;align-items:center;gap:4px}
       .ucns textarea{width:100%;font-family:monospace;font-size:12.5px;padding:8px;border-radius:5px;resize:vertical;box-sizing:border-box}
       #uc-out{height:440px;background:#1e1e1e;color:#d4d4d4}
       #uc-stat{height:120px;background:#111827;color:#cbd5e1;border:1px solid rgba(148,163,184,.25)}
@@ -562,11 +562,11 @@ class UNiNUSConsoleCard extends HTMLElement {
         <div class="ucns">
           <div class="ucblk">
             <div class="uclbl">
-              訊息輸出 (Console Output)
-              <span style="margin-left:auto;display:flex;gap:4px">
-                <button id="uc-dl-out" title="下載輸出">📥 下載</button>
-                <button id="uc-clr-out" title="清除輸出">🗑️ 清除</button>
-              </span>
+              <span>訊息輸出 (Console Output)</span>
+              <input id="uc-cmd" placeholder="輸入指令 (Ctrl+Enter ↑↓)" style="flex:1;margin:0 6px;min-width:80px;font-family:monospace;font-size:12px;height:24px;background:rgba(255,255,255,.08);color:inherit;border:1px solid var(--divider-color,#555);border-radius:3px;padding:0 4px"/>
+              <button id="uc-send" style="white-space:nowrap">執行</button>
+              <button id="uc-dl-out" title="下載輸出" style="margin-left:4px">📥</button>
+              <button id="uc-clr-out" title="清除輸出">🗑️</button>
             </div>
             <textarea id="uc-out" readonly>${this._E(terminalLines)}</textarea>
           </div>
@@ -574,10 +574,7 @@ class UNiNUSConsoleCard extends HTMLElement {
             <div class="uclbl">狀態訊息 (Stat Message)</div>
             <textarea id="uc-stat" readonly>${this._E(statusLines)}</textarea>
           </div>
-          <div class="ucnr">
-            <input id="uc-cmd" placeholder="輸入指令 (Ctrl+Enter 送出 ↑↓ 歷史)" />
-            <button id="uc-send">執行</button>
-          </div>
+
         </div>
       </div>
 
