@@ -9,7 +9,9 @@
           "broker_port": "Port",
           "username": "Username",
           "password": "Password",
-          "urcon_domain": "URCON Domain"
+          "urcon_domain": "URCON Domain",
+          "discovery_host_name": "Discovery Host Name",
+          "callback_ip": "Callback IP / Host (optional, auto-detect if blank)"
         }
       },
       "devices": {

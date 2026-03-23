@@ -12,12 +12,15 @@ from homeassistant import config_entries
 from .const import (
     CONF_BROKER_HOST,
     CONF_BROKER_PORT,
+    CONF_CALLBACK_IP,
+    CONF_DISCOVERY_HOST_NAME,
     CONF_DOMAIN,
     CONF_HOSTS,
     CONF_PASSWORD,
     CONF_SUBSCRIBE_TOPIC,
     CONF_USERNAME,
     DEFAULT_BROKER_PORT,
+    DEFAULT_DISCOVERY_HOST_NAME,
     DEFAULT_DOMAIN,
     DEFAULT_SUBSCRIBE_TOPIC,
     DOMAIN,
@@ -52,6 +55,10 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 username = user_input.get(CONF_USERNAME, "")
                 password = user_input.get(CONF_PASSWORD, "")
                 urcon_domain = user_input.get(CONF_DOMAIN, DEFAULT_DOMAIN)
+                discovery_host_name = user_input.get(
+                    CONF_DISCOVERY_HOST_NAME, DEFAULT_DISCOVERY_HOST_NAME
+                )
+                callback_ip = user_input.get(CONF_CALLBACK_IP, "")
 
                 def _test_mqtt() -> None:
                     client = UNiNUSMQTT(
@@ -61,6 +68,8 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         password=password,
                         urcon_domain=urcon_domain,
                         host_name="ha-unircon-setup",
+                        discovery_host_name=discovery_host_name,
+                        default_callback_ip=callback_ip,
                     )
                     try:
                         client.connect()
@@ -85,6 +94,11 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(CONF_USERNAME, default="admin"): str,
                     vol.Optional(CONF_PASSWORD, default=""): str,
                     vol.Optional(CONF_DOMAIN, default=DEFAULT_DOMAIN): str,
+                    vol.Optional(
+                        CONF_DISCOVERY_HOST_NAME,
+                        default=DEFAULT_DISCOVERY_HOST_NAME,
+                    ): str,
+                    vol.Optional(CONF_CALLBACK_IP, default=""): str,
                 }
             ),
             errors=errors,

@@ -9,7 +9,9 @@
           "broker_port": "Port",
           "username": "使用者帳號",
           "password": "密碼",
-          "urcon_domain": "URCON Domain"
+          "urcon_domain": "URCON Domain",
+          "discovery_host_name": "Discovery Host 名稱",
+          "callback_ip": "Callback IP / Host（可留空自動推算）"
         }
       },
       "devices": {

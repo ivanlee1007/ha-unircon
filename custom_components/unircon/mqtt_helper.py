@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
 import threading
 from typing import Any, Callable
 
@@ -29,6 +30,8 @@ class UNiNUSMQTT:
         password: str,
         urcon_domain: str = "uninus",
         host_name: str = "ha-unircon",
+        discovery_host_name: str = "urcon",
+        default_callback_ip: str | None = None,
     ) -> None:
         self._host = host
         self._port = port
@@ -36,6 +39,8 @@ class UNiNUSMQTT:
         self._password = password
         self._domain = urcon_domain
         self._host_name = host_name
+        self._discovery_host_name = (discovery_host_name or "urcon").strip() or "urcon"
+        self._default_callback_ip = (default_callback_ip or "").strip() or None
         self._client = None
         self._on_message_callbacks: list[Callable[[str, str], None]] = []
         self._on_connect_callbacks: list[Callable[[bool], None]] = []
@@ -127,12 +132,15 @@ class UNiNUSMQTT:
         if not self._client:
             return
         topic = TOPIC_URCOM.format(domain=self._domain)
-        collect_topic = TOPIC_HOST_COLLECT.format(host_name=self._host_name)
-        legacy_collect_topic = "ha/sub/urcon"
+        collect_topics = {
+            TOPIC_HOST_COLLECT.format(host_name=self._host_name),
+            TOPIC_HOST_COLLECT.format(host_name=self._discovery_host_name),
+            "ha/sub/urcon",
+        }
         try:
             self._client.subscribe(topic, 1)
-            self._client.subscribe(collect_topic, 1)
-            self._client.subscribe(legacy_collect_topic, 1)
+            for collect_topic in collect_topics:
+                self._client.subscribe(collect_topic, 1)
         except Exception as err:
             _LOGGER.warning("URCOM subscribe failed: %s", err)
 
@@ -165,25 +173,58 @@ class UNiNUSMQTT:
         self._client.publish(topic, payload, qos=1)
         _LOGGER.info("Test publish: %s → %s", topic, payload)
 
-    def collect_neighbors(self) -> None:
+    def _resolve_callback_ip(self, callback_ip: str | None = None) -> str:
+        """Resolve backend callback IP/host to mimic browser context as closely as possible."""
+        value = (callback_ip or self._default_callback_ip or "").strip()
+        if value:
+            return value
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.connect((self._host, self._port))
+                resolved = sock.getsockname()[0]
+                if resolved:
+                    return resolved
+        except Exception as err:
+            _LOGGER.debug("Failed to resolve source IP via broker route: %s", err)
+        try:
+            hostname = socket.gethostname()
+            resolved = socket.gethostbyname(hostname)
+            if resolved:
+                return resolved
+        except Exception as err:
+            _LOGGER.debug("Failed to resolve callback host via gethostbyname: %s", err)
+        return "127.0.0.1"
+
+    def collect_neighbors(
+        self,
+        *,
+        host_name: str | None = None,
+        callback_ip: str | None = None,
+        domain: str | None = None,
+    ) -> tuple[str, dict[str, Any]]:
         """Publish URCOM neighbor discovery message."""
         if not self._client or not self._client.is_connected:
             _LOGGER.error("MQTT not connected")
-            return
-        topic = TOPIC_URCOM.format(domain=self._domain)
-        payload = json.dumps({
-            "host": "urcon",
+            raise RuntimeError("MQTT not connected")
+        effective_host = (host_name or self._discovery_host_name or "urcon").strip() or "urcon"
+        effective_domain = (domain or self._domain or "uninus").strip() or "uninus"
+        effective_callback_ip = self._resolve_callback_ip(callback_ip)
+        topic = TOPIC_URCOM.format(domain=effective_domain)
+        payload_obj: dict[str, Any] = {
+            "host": effective_host,
             "user": self._username,
             "pass": self._password,
             "plen": 0,
             "type": 13,
-            "domain": self._domain,
-            "ip": self._host,
-            "rch": "ha/sub/urcon",
+            "domain": effective_domain,
+            "ip": effective_callback_ip,
+            "rch": f"ha/sub/{effective_host}",
             "payload": "",
-        })
-        self._client.publish(topic, payload, qos=0)
+        }
+        payload = json.dumps(payload_obj)
+        self._client.publish(topic, payload, qos=0, retain=False)
         _LOGGER.info("URCOM neighbor collection sent to %s payload=%s", topic, payload)
+        return topic, payload_obj
 
     @property
     def is_connected(self) -> bool:

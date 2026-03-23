@@ -4,7 +4,7 @@ DOMAIN = "unircon"
 
 CARD_JS_FILENAME = "unircon-console-card.js"
 CARD_STATIC_URL = f"/{DOMAIN}_static/{CARD_JS_FILENAME}"
-CARD_RESOURCE_VERSION = "1.0.22"
+CARD_RESOURCE_VERSION = "1.0.23"
 CARD_RESOURCE_URL = f"{CARD_STATIC_URL}?v={CARD_RESOURCE_VERSION}"
 
 # Config keys
@@ -15,11 +15,14 @@ CONF_PASSWORD = "password"
 CONF_DOMAIN = "urcon_domain"
 CONF_HOSTS = "hosts"
 CONF_SUBSCRIBE_TOPIC = "subscribe_topic"
+CONF_DISCOVERY_HOST_NAME = "discovery_host_name"
+CONF_CALLBACK_IP = "callback_ip"
 
 # Defaults
 DEFAULT_BROKER_PORT = 1883
 DEFAULT_DOMAIN = "uninus"
 DEFAULT_SUBSCRIBE_TOPIC = "ha/pubrsp/#"
+DEFAULT_DISCOVERY_HOST_NAME = "urcon"
 
 # MQTT topics
 TOPIC_COMMAND = "ha/sub/{host}"

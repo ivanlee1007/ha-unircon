@@ -339,8 +339,15 @@ class UNiNUSConsoleCard extends HTMLElement {
 
   // ===== Neighbors (Phase 5) =====
   _collectNeighbors() {
-    this._hass.callService("unircon", "collect_neighbors", {}).catch(() => {});
-    this._consoleLines.push("--> Searching for UNiNUS neighbors...");
+    const browserCallbackIp = (window.__localIP || (location && location.hostname) || "").trim();
+    const broker = this._readBrokerInputs();
+    const serviceData = {
+      discovery_host_name: "urcon",
+      callback_ip: browserCallbackIp,
+      urcon_domain: (broker.domain || "uninus").trim() || "uninus",
+    };
+    this._hass.callService("unircon", "collect_neighbors", serviceData).catch(() => {});
+    this._consoleLines.push(`--> Searching for UNiNUS neighbors... callback=${serviceData.callback_ip || "(auto)"}`);
     this._render();
   }
   _addNeighbor(host) {

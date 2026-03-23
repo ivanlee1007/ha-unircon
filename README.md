@@ -25,6 +25,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 3. 安裝 **UNiNUS Remote Console**
 4. 重啟 HA
 5. 設定 → 整合 → 新增「UNiNUS Remote Console」
+6. 若你的 URCON discovery 需要固定 callback host/IP，可在安裝時填入 `Discovery Host Name` 與 `Callback IP / Host`
 
 ### 手動安裝
 

@@ -19,11 +19,14 @@ from .const import (
     CARD_STATIC_URL,
     CONF_BROKER_HOST,
     CONF_BROKER_PORT,
+    CONF_CALLBACK_IP,
+    CONF_DISCOVERY_HOST_NAME,
     CONF_DOMAIN,
     CONF_HOSTS,
     CONF_PASSWORD,
     CONF_USERNAME,
     DEFAULT_BROKER_PORT,
+    DEFAULT_DISCOVERY_HOST_NAME,
     DOMAIN,
 )
 from .mqtt_helper import UNiNUSMQTT
@@ -117,6 +120,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     username = config[CONF_USERNAME]
     password = config[CONF_PASSWORD]
     urcon_domain = config.get(CONF_DOMAIN, "uninus")
+    discovery_host_name = config.get(CONF_DISCOVERY_HOST_NAME, DEFAULT_DISCOVERY_HOST_NAME)
+    callback_ip = config.get(CONF_CALLBACK_IP, "")
     hosts = config.get(CONF_HOSTS, [])
 
     # Card static path registered in async_setup (domain level)
@@ -129,6 +134,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         password=password,
         urcon_domain=urcon_domain,
         host_name=f"ha-unircon-{entry.entry_id[:8]}",
+        discovery_host_name=discovery_host_name,
+        default_callback_ip=callback_ip,
     )
 
     device_data = {
@@ -311,13 +318,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             return
 
-        def _collect() -> None:
-            mqtt_client.collect_neighbors()
+        requested_host_name = str(
+            call.data.get(CONF_DISCOVERY_HOST_NAME, discovery_host_name)
+        ).strip() or DEFAULT_DISCOVERY_HOST_NAME
+        requested_callback_ip = str(
+            call.data.get(CONF_CALLBACK_IP, callback_ip)
+        ).strip()
+        requested_domain = str(call.data.get(CONF_DOMAIN, urcon_domain)).strip() or urcon_domain
+
+        def _collect() -> tuple[str, dict[str, Any]]:
+            return mqtt_client.collect_neighbors(
+                host_name=requested_host_name,
+                callback_ip=requested_callback_ip,
+                domain=requested_domain,
+            )
 
         try:
-            await hass.async_add_executor_job(_collect)
+            topic, payload_obj = await hass.async_add_executor_job(_collect)
             _fire_console_output(
                 f"[URCON] Neighbor discovery sent via backend MQTT ({broker_host}:{broker_port})",
+                "service/collect_neighbors",
+            )
+            _fire_console_output(
+                f"[URCON] Topic={topic} Payload={json.dumps(payload_obj, ensure_ascii=False)}",
                 "service/collect_neighbors",
             )
         except Exception as err:
