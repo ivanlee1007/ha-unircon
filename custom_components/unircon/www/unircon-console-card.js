@@ -78,9 +78,12 @@ class UNiNUSConsoleCard extends HTMLElement {
           this._token = token;
         }
 
-        const terminalLine = payload.output || nested.output || "";
-        let statusLine = "";
-        if (!terminalLine && token) {
+        const rawOutput = payload.output || nested.output || "";
+        // Route: [bracket] lines + "-->" command echo → status; rest → terminal
+        const isStatusLine = rawOutput.startsWith("[") || rawOutput.startsWith("-->");
+        const terminalLine = rawOutput && !isStatusLine ? rawOutput : "";
+        let statusLine = isStatusLine && rawOutput ? rawOutput : "";
+        if (!terminalLine && !statusLine && token) {
           statusLine = `Token[${payload.deviceid || nested.deviceid || eventHost || "?"}]: ${token}`;
         }
         if (!terminalLine && !statusLine && isDiscovery && eventHost && !isSelfDiscovery) {
@@ -102,14 +105,14 @@ class UNiNUSConsoleCard extends HTMLElement {
 
   _pushTerminal(line) {
     if (!line) return;
-    this._terminalLines.push(String(line));
-    if (this._terminalLines.length > 500) this._terminalLines.shift();
+    this._terminalLines.unshift(String(line));
+    if (this._terminalLines.length > 500) this._terminalLines.pop();
   }
 
   _pushStatus(line) {
     if (!line) return;
-    this._statusLines.push(String(line));
-    if (this._statusLines.length > 500) this._statusLines.shift();
+    this._statusLines.unshift(String(line));
+    if (this._statusLines.length > 500) this._statusLines.pop();
   }
 
   // ===== MQTT WebSocket (Phase 2) =====
@@ -457,7 +460,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.34";
+    const buildVersion = "1.0.35";
 
     this.innerHTML = `
     <style>
