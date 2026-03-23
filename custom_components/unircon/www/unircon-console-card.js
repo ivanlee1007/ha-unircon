@@ -460,7 +460,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.35";
+    const buildVersion = "1.0.36";
 
     this.innerHTML = `
     <style>
@@ -489,7 +489,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       .ucblk{margin-bottom:8px}
       .uclbl{font-size:12px;font-weight:700;color:var(--secondary-text-color,#666);margin:0 0 4px 0}
       .ucns textarea{width:100%;font-family:monospace;font-size:12.5px;padding:8px;border-radius:5px;resize:vertical;box-sizing:border-box}
-      #uc-out{height:220px;background:#1e1e1e;color:#d4d4d4}
+      #uc-out{height:440px;background:#1e1e1e;color:#d4d4d4}
       #uc-stat{height:120px;background:#111827;color:#cbd5e1;border:1px solid rgba(148,163,184,.25)}
       .ucnr{display:flex;gap:5px;margin-top:5px}
       .ucnr input{flex:1;padding:5px 8px;font-family:monospace;font-size:12.5px;border:1px solid var(--divider-color,#ccc);border-radius:4px}
@@ -543,7 +543,7 @@ class UNiNUSConsoleCard extends HTMLElement {
           <button data-cmd="sh ver">show ver</button>
           <button data-cmd="sh urcon/ne">urcon/ne</button>
           <button data-cmd="sh result">result</button>
-          <button data-cmd="backup">Backup</button>
+          <button data-cmd="show run">show run</button>
         </div>
         <div class="ucns">
           <div class="ucblk">
@@ -594,7 +594,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       <div class="tp ${this._tab==='batch'?'on':''}" id="tp-batch">
         <div class="bat">
           <div><label>主機清單（每行一台）</label><textarea id="uc-batch-hosts" placeholder="sensor01&#10;sensor02&#10;sensor03">${hosts.join("\n")}</textarea></div>
-          <div><label>批次指令（每行一條）</label><textarea id="uc-batch-cmds" placeholder="sh ver&#10;sh result&#10;backup">sh ver&#10;backup</textarea></div>
+          <div><label>批次指令（每行一條）</label><textarea id="uc-batch-cmds" placeholder="sh ver&#10;sh result&#10;show run">sh ver&#10;show run</textarea></div>
         </div>
         <div style="margin-top:8px;display:flex;gap:6px">
           <button id="uc-batch-run" style="background:#4caf50;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer">▶ 執行批次</button>
