@@ -111,6 +111,25 @@ class UNiNUSMQTT:
                 pass
             self._client = None
 
+    def reconnect_to(
+        self,
+        host: str,
+        port: int,
+        username: str = "",
+        password: str = "",
+    ) -> tuple[str, int, str, str]:
+        """Temporarily reconnect to a different broker.
+
+        Returns (old_host, old_port, old_username, old_password) for reconnecting back.
+        """
+        old = (self._host, self._port, self._username, self._password)
+        self._host = host
+        self._port = port
+        self._username = username
+        self._password = password
+        self.connect()
+        return old  # type: ignore[return-value]
+
     def subscribe_devices(self, hosts: list[str]) -> None:
         """Subscribe to console and response topics for given hosts."""
         if not self._client:

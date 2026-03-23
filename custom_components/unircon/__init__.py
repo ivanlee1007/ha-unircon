@@ -334,13 +334,57 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_collect_neighbors(call: ServiceCall) -> None:
         import asyncio
 
+        # Check if card passed different broker info (Site Manager)
+        req_broker_host = str(call.data.get("broker_host", "")).strip()
+        req_broker_port = int(call.data.get("broker_port", 0) or 0)
+        req_broker_user = str(call.data.get("broker_user", "")).strip()
+        req_broker_pass = str(call.data.get("broker_password", "")).strip()
+
+        # Temporarily reconnect to card's broker if different
+        need_reconnect_back = False
+        saved_broker = None
+        if req_broker_host and (req_broker_host != broker_host or (req_broker_port and req_broker_port != broker_port)):
+            _fire_console_output(
+                f"[MQTT] Temporarily switching broker to {req_broker_host}:{req_broker_port}",
+                "service/collect_neighbors",
+            )
+            try:
+                def _reconnect() -> tuple:
+                    return mqtt_client.reconnect_to(
+                        req_broker_host,
+                        req_broker_port or broker_port,
+                        req_broker_user,
+                        req_broker_pass,
+                    )
+                saved_broker = await hass.async_add_executor_job(_reconnect)
+                need_reconnect_back = True
+                # Update local vars for logging
+                broker_host_used = req_broker_host
+                broker_port_used = req_broker_port or broker_port
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                _fire_console_output(
+                    f"[ERROR] Cannot connect to {req_broker_host}:{req_broker_port}: {e}",
+                    "service/collect_neighbors",
+                )
+                return
+        else:
+            broker_host_used = broker_host
+            broker_port_used = broker_port
+
         ok, err_text = await _ensure_backend_mqtt_connected("collect_neighbors")
         if not ok:
             detail = f": {err_text}" if err_text else ""
             _fire_console_output(
-                f"[ERROR] Backend MQTT reconnect failed; neighbor discovery not sent ({broker_host}:{broker_port}){detail}",
+                f"[ERROR] Backend MQTT reconnect failed; neighbor discovery not sent ({broker_host_used}:{broker_port_used}){detail}",
                 "service/collect_neighbors",
             )
+            # Reconnect back to original if we switched
+            if need_reconnect_back and saved_broker:
+                try:
+                    await hass.async_add_executor_job(lambda: mqtt_client.reconnect_to(*saved_broker))
+                except Exception:
+                    pass
             return
 
         _fire_console_output(
@@ -372,7 +416,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             topic, payload_obj = await hass.async_add_executor_job(_collect)
             _fire_console_output(
-                f"[URCON] Neighbor discovery sent via backend MQTT ({broker_host}:{broker_port})",
+                f"[URCON] Neighbor discovery sent via backend MQTT ({broker_host_used}:{broker_port_used})",
                 "service/collect_neighbors",
             )
             _fire_console_output(
@@ -384,6 +428,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 f"[ERROR] Neighbor discovery failed: {err}",
                 "service/collect_neighbors",
             )
+        finally:
+            # Reconnect back to original broker if we temporarily switched
+            if need_reconnect_back and saved_broker:
+                _fire_console_output(
+                    f"[MQTT] Reconnecting back to original broker ({saved_broker[0]}:{saved_broker[1]})",
+                    "service/collect_neighbors",
+                )
+                try:
+                    await hass.async_add_executor_job(lambda: mqtt_client.reconnect_to(*saved_broker))
+                except Exception as e:
+                    _fire_console_output(
+                        f"[WARN] Failed to reconnect to original broker: {e}",
+                        "service/collect_neighbors",
+                    )
 
     async def handle_batch_command(call: ServiceCall) -> None:
         hosts_list = call.data.get("hosts", [])

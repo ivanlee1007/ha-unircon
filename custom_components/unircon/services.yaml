@@ -93,6 +93,45 @@ mqtt_publish:
 collect_neighbors:
   name: Collect UNiNUS neighbors
   description: Discover UNiNUS devices on the network via URCOM protocol.
+  fields:
+    broker_host:
+      name: Broker host
+      description: MQTT broker hostname/IP (optional, uses backend config if empty).
+      required: false
+      selector:
+        text:
+    broker_port:
+      name: Broker port
+      description: MQTT broker port.
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 65535
+    broker_user:
+      name: Broker username
+      description: MQTT broker username.
+      required: false
+      selector:
+        text:
+    broker_password:
+      name: Broker password
+      description: MQTT broker password.
+      required: false
+      selector:
+        text:
+    domain:
+      name: URCOM domain
+      description: URCOM discovery domain.
+      required: false
+      selector:
+        text:
+    callback_ip:
+      name: Callback IP
+      description: IP address for device to respond to.
+      required: false
+      selector:
+        text:
 
 generate_deploy:
   name: Generate deploy config

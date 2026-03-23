@@ -490,13 +490,18 @@ class UNiNUSConsoleCard extends HTMLElement {
       discovery_host_name: "urcon",
       callback_ip: browserCallbackIp,
       urcon_domain: (broker.domain || "uninus").trim() || "uninus",
+      // Pass current broker info so backend connects to the right broker
+      broker_host: (broker.host || "").trim(),
+      broker_port: parseInt(broker.port) || 1884,
+      broker_user: (broker.username || "").trim(),
+      broker_password: (broker.password || "").trim(),
     };
     this._debugRawWsUntil = Date.now() + 20000;
     this._wsFrameSeq = 0;
     this._neighbors = [];
     this._hass.callService("unircon", "collect_neighbors", serviceData).catch(() => {});
-    this._pushStatus(`--> Searching for UNiNUS neighbors... callback=${serviceData.callback_ip || "(auto)"}`);
-    this._pushStatus("[INFO] Discovery display now follows backend MQTT events first; WS raw capture stays enabled for 20s as debug only");
+    this._pushStatus(`--> Searching for UNiNUS neighbors... broker=${serviceData.broker_host}:${serviceData.broker_port}`);
+    this._pushStatus("[INFO] Discovery display follows backend MQTT events; WS raw capture stays enabled for 20s as debug");
     this._render();
   }
   _addNeighbor(host) {
@@ -617,7 +622,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.43";
+    const buildVersion = "1.0.44";
 
     this.innerHTML = `
     <style>
