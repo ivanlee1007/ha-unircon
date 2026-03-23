@@ -31,6 +31,9 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._connected = false;
     this._batchRunning = false;
     this._neighbors = [];
+    this._nbFilter = "";
+    this._nbChecked = new Set();
+    this._nbCollapsed = false;
     this._cmdQueue = [];
     this._waitingReply = false;
     // Restore broker settings from localStorage
@@ -506,6 +509,29 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._render();
   }
 
+  _getFilteredNeighbors() {
+    // Clean stale checked entries
+    this._nbChecked = new Set([...this._nbChecked].filter(h => this._neighbors.includes(h)));
+    const f = (this._nbFilter || "").trim().toLowerCase();
+    if (!f) return this._neighbors;
+    return this._neighbors.filter(n => n.toLowerCase().includes(f));
+  }
+  _toggleNbCollapse() { this._nbCollapsed = !this._nbCollapsed; this._render(); }
+  _nbSelectAll() { this._getFilteredNeighbors().forEach(n => this._nbChecked.add(n)); this._render(); }
+  _nbSelectNone() { this._nbChecked.clear(); this._render(); }
+  _nbAddSelected() {
+    if (!this.config.hosts) this.config.hosts = [];
+    const hosts = Array.from(this._nbChecked).filter(h => !this.config.hosts.includes(h));
+    if (!hosts.length) { this._pushStatus("[URCON] 沒有新的鄰居可加入"); return; }
+    hosts.forEach(h => { this.config.hosts.push(h); this._hass.callService("unircon", "add_device", { host: h }).catch(() => {}); });
+    this._pushStatus(`[URCON] Added ${hosts.length} neighbors: ${hosts.join(", ")}`);
+    this._nbChecked.clear();
+    this._render();
+  }
+  _toggleNbCb(host) {
+    if (this._nbChecked.has(host)) this._nbChecked.delete(host); else this._nbChecked.add(host);
+  }
+
   // ===== Rendering =====
   _E(v) { return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
@@ -516,7 +542,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.40";
+    const buildVersion = "1.0.41";
 
     this.innerHTML = `
     <style>
@@ -696,12 +722,34 @@ class UNiNUSConsoleCard extends HTMLElement {
         <hr style="border:none;border-top:1px dashed var(--divider-color,#ddd);margin:8px 0"/>
         <div>
           <button id="ms-neighbor" style="padding:5px 12px;background:#ff9800;color:#fff;border:none;border-radius:4px;cursor:pointer">🔍 蒐集 UNiNUS 鄰居</button>
-          <button id="ms-add-all-nb" style="padding:5px 10px;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-left:4px">加入全部鄰居</button>
           <button id="ms-clear-nb" style="padding:5px 10px;background:var(--secondary-text-color,#888);color:#fff;border:none;border-radius:4px;cursor:pointer;margin-left:4px">清除列表</button>
         </div>
-        <div class="nblist" id="nb-list">
-          ${this._neighbors.map(n => `<div class="nb">📡 ${n} <button data-add="${this._E(n)}">加入主機清單</button></div>`).join("")}
-          ${this._neighbors.length === 0 ? '<div style="font-size:12px;color:#888;margin-top:4px">尚未探索，點擊上方按鈕開始</div>' : ''}
+        <div style="margin-top:8px;border:1px solid var(--divider-color,#ddd);border-radius:6px;overflow:hidden">
+          <div id="nb-header" style="display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:rgba(255,255,255,.06);cursor:pointer;font-size:13px;font-weight:600">
+            <span>📡 鄰居裝置 <span style="background:var(--primary-color,#03a9f4);color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:400">${this._neighbors.length}</span></span>
+            <span id="nb-arrow" style="font-size:12px;transition:transform .2s">${this._nbCollapsed ? '▶' : '▼'}</span>
+          </div>
+          ${this._nbCollapsed ? '' : `
+          <div style="padding:6px 8px;display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--divider-color,#eee)">
+            <input id="nb-filter" type="text" value="${this._E(this._nbFilter)}" placeholder="🔍 過濾..." style="flex:1;height:26px;padding:2px 6px;font-size:12px;border:1px solid var(--divider-color,#ccc);border-radius:4px;background:rgba(255,255,255,.08);color:inherit">
+            <button id="nb-sel-all" style="font-size:11px;padding:2px 8px;background:var(--primary-color,#03a9f4);color:#fff;border:none;border-radius:3px;cursor:pointer">全選</button>
+            <button id="nb-sel-none" style="font-size:11px;padding:2px 8px;background:var(--secondary-text-color,#888);color:#fff;border:none;border-radius:3px;cursor:pointer">清除</button>
+            <button id="nb-add-sel" style="font-size:11px;padding:2px 8px;background:#4caf50;color:#fff;border:none;border-radius:3px;cursor:pointer">加入勾選</button>
+            <button id="ms-add-all-nb" style="font-size:11px;padding:2px 8px;background:#ff9800;color:#fff;border:none;border-radius:3px;cursor:pointer">全部加入</button>
+          </div>
+          <div id="nb-list" style="max-height:240px;overflow-y:auto;font-size:12px">
+            ${this._getFilteredNeighbors().map(n => {
+              const inHost = (this.config.hosts||[]).includes(n);
+              const checked = this._nbChecked.has(n) ? 'checked' : '';
+              return `<div class="nb-row" style="display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid var(--divider-color,#f0f0f0)">
+                <input type="checkbox" class="nb-cb" data-host="${this._E(n)}" ${checked} style="flex:0 0 auto">
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📡 ${this._E(n)}</span>
+                ${inHost ? '<span style="flex:0 0 auto;font-size:10px;color:#4caf50">✓ 已加入</span>' : `<button data-add="${this._E(n)}" style="flex:0 0 auto;font-size:10px;padding:1px 6px;background:var(--primary-color,#03a9f4);color:#fff;border:none;border-radius:3px;cursor:pointer">加入</button>`}
+              </div>`;
+            }).join("")}
+            ${this._getFilteredNeighbors().length === 0 ? '<div style="padding:8px;text-align:center;color:#888">沒有符合的鄰居</div>' : ''}
+          </div>
+          `}
         </div>
       </div>
 
@@ -812,13 +860,28 @@ class UNiNUSConsoleCard extends HTMLElement {
     });
     const msNb = this.querySelector("#ms-neighbor");
     if (msNb) msNb.addEventListener("click", () => this._collectNeighbors());
+    const msClearNb = this.querySelector("#ms-clear-nb");
+    if (msClearNb) msClearNb.addEventListener("click", () => { this._neighbors = []; this._nbChecked.clear(); this._render(); });
+    // Neighbor panel (new)
+    const nbHeader = this.querySelector("#nb-header");
+    if (nbHeader) nbHeader.addEventListener("click", () => this._toggleNbCollapse());
+    const nbFilter = this.querySelector("#nb-filter");
+    if (nbFilter) nbFilter.addEventListener("input", (e) => { this._nbFilter = e.target.value; this._render(); });
+    const nbSelAll = this.querySelector("#nb-sel-all");
+    if (nbSelAll) nbSelAll.addEventListener("click", () => this._nbSelectAll());
+    const nbSelNone = this.querySelector("#nb-sel-none");
+    if (nbSelNone) nbSelNone.addEventListener("click", () => this._nbSelectNone());
+    const nbAddSel = this.querySelector("#nb-add-sel");
+    if (nbAddSel) nbAddSel.addEventListener("click", () => this._nbAddSelected());
     const msAddAllNb = this.querySelector("#ms-add-all-nb");
     if (msAddAllNb) msAddAllNb.addEventListener("click", () => this._addAllNeighbors());
-    const msClearNb = this.querySelector("#ms-clear-nb");
-    if (msClearNb) msClearNb.addEventListener("click", () => { this._neighbors = []; this._render(); });
-    // Add neighbor buttons
-    this.querySelectorAll(".nblist button[data-add]").forEach(b => {
+    // Add neighbor buttons (individual)
+    this.querySelectorAll("#nb-list button[data-add]").forEach(b => {
       b.addEventListener("click", () => this._addNeighbor(b.dataset.add));
+    });
+    // Checkbox listeners
+    this.querySelectorAll("#nb-list .nb-cb").forEach(cb => {
+      cb.addEventListener("change", (e) => { this._toggleNbCb(e.target.dataset.host); });
     });
   }
 }
