@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from typing import Any, Callable
 
 from .const import (
@@ -38,10 +39,25 @@ class UNiNUSMQTT:
         self._client = None
         self._on_message_callbacks: list[Callable[[str, str], None]] = []
         self._on_connect_callbacks: list[Callable[[bool], None]] = []
+        self._connect_event = threading.Event()
+        self._connect_success = False
+        self._last_connect_error: str | None = None
 
     def connect(self) -> None:
-        """Connect to MQTT broker."""
+        """Connect to MQTT broker and wait for on_connect result."""
         import paho.mqtt.client as mqtt
+
+        if self._client:
+            try:
+                self._client.loop_stop()
+                self._client.disconnect()
+            except Exception:
+                pass
+            self._client = None
+
+        self._connect_event.clear()
+        self._connect_success = False
+        self._last_connect_error = None
 
         # Use v2 API if available (paho-mqtt >= 2.0), fallback to v1
         try:
@@ -63,9 +79,19 @@ class UNiNUSMQTT:
         try:
             self._client.connect(self._host, self._port, keepalive=60)
             self._client.loop_start()
+            if not self._connect_event.wait(timeout=5):
+                raise RuntimeError(f"MQTT connect timeout to {self._host}:{self._port}")
+            if not self._connect_success:
+                raise RuntimeError(self._last_connect_error or f"MQTT connect rejected by {self._host}:{self._port}")
             _LOGGER.info("UNiNUS MQTT connected to %s:%s", self._host, self._port)
         except Exception as err:
             _LOGGER.error("UNiNUS MQTT connect failed: %s", err)
+            try:
+                if self._client:
+                    self._client.loop_stop()
+                    self._client.disconnect()
+            except Exception:
+                pass
             self._client = None
             raise
 
@@ -174,6 +200,12 @@ class UNiNUSMQTT:
     def _on_connect(self, client, userdata, flags, rc, *args) -> None:
         """Handle MQTT connect event."""
         success = rc == 0
+        self._connect_success = success
+        if success:
+            self._last_connect_error = None
+        else:
+            self._last_connect_error = f"MQTT broker rejected connection rc={rc}"
+        self._connect_event.set()
         _LOGGER.info("UNiNUS MQTT on_connect: rc=%s success=%s", rc, success)
         for cb in self._on_connect_callbacks:
             try:
@@ -183,6 +215,9 @@ class UNiNUSMQTT:
 
     def _on_disconnect(self, client, userdata, rc=0, *args) -> None:
         """Handle MQTT disconnect event."""
+        self._connect_success = False
+        if rc not in (0, None):
+            self._last_connect_error = f"MQTT disconnected rc={rc}"
         _LOGGER.warning("UNiNUS MQTT disconnected: rc=%s", rc)
         for cb in self._on_connect_callbacks:
             try:

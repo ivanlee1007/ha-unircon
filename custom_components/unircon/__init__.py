@@ -208,7 +208,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 mqtt_client.subscribe_urcom()
 
             await hass.async_add_executor_job(_resubscribe)
-            return mqtt_client.is_connected
+            return True
         except Exception as err:
             _LOGGER.error("Backend MQTT reconnect failed: %s", err)
             return False
