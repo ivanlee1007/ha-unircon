@@ -154,18 +154,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except (json.JSONDecodeError, ValueError):
                 data = {"raw": payload}
 
-            if isinstance(data, dict) and data.get("type") in (13, 14) and data.get("host"):
+            if topic.startswith("ha/sub/") or topic.startswith("urcom/"):
+                if isinstance(data, dict) and data.get("type") in (13, 14):
+                    hass.bus.async_fire(
+                        f"{DOMAIN}_console",
+                        {
+                            "host": data.get("host"),
+                            "ip": data.get("ip"),
+                            "type": data.get("type"),
+                            "topic": topic,
+                            "data": data,
+                        },
+                    )
+                    return
                 hass.bus.async_fire(
                     f"{DOMAIN}_console",
                     {
-                        "host": data.get("host"),
-                        "ip": data.get("ip"),
-                        "type": data.get("type"),
                         "topic": topic,
-                        "data": data,
+                        "data": {"output": f"[MQTT-RX] {topic} {payload[:300]}"},
                     },
                 )
-                return
 
             for host in list(device_data[DATA_HOSTS]):
                 if f"/{host}/console/" in topic or f"pubrsp/{host}" in topic:

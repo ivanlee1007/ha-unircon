@@ -136,6 +136,7 @@ class UNiNUSMQTT:
             TOPIC_HOST_COLLECT.format(host_name=self._host_name),
             TOPIC_HOST_COLLECT.format(host_name=self._discovery_host_name),
             "ha/sub/urcon",
+            "ha/sub/#",
         }
         try:
             self._client.subscribe(topic, 1)

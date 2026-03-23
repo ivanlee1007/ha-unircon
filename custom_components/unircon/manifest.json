@@ -14,6 +14,6 @@
   "dependencies": [
     "frontend"
   ],
-  "version": "1.0.27",
+  "version": "1.0.28",
   "homeassistant": "2024.1.0"
 }
