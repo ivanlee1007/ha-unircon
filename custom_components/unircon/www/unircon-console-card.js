@@ -11,8 +11,10 @@ class UNiNUSConsoleCard extends HTMLElement {
   }
   set hass(hass) {
     this._hass = hass;
-    if (!this._initialized) this._init();
-    this._render();
+    if (!this._initialized) {
+      this._init();
+      this._render();
+    }
   }
   getCardSize() { return 20; }
 
@@ -55,7 +57,20 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (this._hass) {
       this._hass.connection.subscribeEvents((ev) => {
         const d = ev.data || {};
-        const line = (d.data && d.data.output) ? d.data.output : JSON.stringify(d);
+        const payload = d.data || {};
+
+        if ((payload.type === 13 || d.type === 13) && (payload.host || d.host)) {
+          const name = payload.host || d.host;
+          if (!this._neighbors.includes(name)) {
+            this._neighbors.push(name);
+          }
+        }
+
+        const line = payload.output
+          ? payload.output
+          : (payload.type === 13 && (payload.host || d.host))
+            ? `[URCON] Discovered neighbor: ${payload.host || d.host} (${payload.ip || d.ip || ""})`
+            : JSON.stringify(d);
         this._consoleLines.push(line);
         if (this._consoleLines.length > 500) this._consoleLines.shift();
         this._render();

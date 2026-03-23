@@ -160,6 +160,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except (json.JSONDecodeError, ValueError):
                 data = {"raw": payload}
 
+            if isinstance(data, dict) and data.get("type") == 13 and data.get("host"):
+                hass.bus.async_fire(
+                    f"{DOMAIN}_console",
+                    {
+                        "host": data.get("host"),
+                        "ip": data.get("ip"),
+                        "type": data.get("type"),
+                        "topic": topic,
+                        "data": data,
+                    },
+                )
+                return
+
             for host in hosts:
                 if f"/{host}/console/" in topic or f"pubrsp/{host}" in topic:
                     history = device_data[DATA_CONSOLE_HISTORY].get(host, [])
