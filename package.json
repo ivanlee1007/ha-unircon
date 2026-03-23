@@ -1,0 +1,11 @@
+{
+  "name": "ha-unircon-devtools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "probe:discovery": "node tools/observe_discovery.mjs"
+  },
+  "dependencies": {
+    "mqtt": "^5.15.0"
+  }
+}
