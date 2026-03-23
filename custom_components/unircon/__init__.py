@@ -187,8 +187,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         history[:] = history[-500:]
                     device_data[DATA_CONSOLE_HISTORY][host] = history
 
-                    if isinstance(data, dict) and "token" in data:
-                        device_data[DATA_TOKENS][host] = data["token"]
+                    if isinstance(data, dict):
+                        token = data.get("token")
+                        if not token and isinstance(data.get("data"), dict):
+                            token = data["data"].get("token")
+                        if token:
+                            device_data[DATA_TOKENS][host] = token
 
                     _emit_console_event(
                         {"host": host, "topic": topic, "data": data}

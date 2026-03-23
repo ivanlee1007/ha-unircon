@@ -20,7 +20,8 @@ class UNiNUSConsoleCard extends HTMLElement {
 
   _init() {
     this._initialized = true;
-    this._consoleLines = [];
+    this._terminalLines = [];
+    this._statusLines = [];
     this._commandHistory = [];
     this._historyIdx = -1;
     this._selectedHost = "";
@@ -59,6 +60,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       this._hass.connection.subscribeEvents((ev) => {
         const d = ev.data || {};
         const payload = d.data || {};
+        const nested = payload && typeof payload.data === "object" ? payload.data : {};
         const eventType = payload.type ?? d.type;
         const eventHost = payload.host || d.host;
         const eventIp = payload.ip || d.ip || "";
@@ -71,21 +73,43 @@ class UNiNUSConsoleCard extends HTMLElement {
           }
         }
 
-        let line = payload.output || "";
-        if (!line && isDiscovery && eventHost && !isSelfDiscovery) {
-          line = `[URCON] Discovered neighbor: ${eventHost} (${eventIp}) [src=${d.source || "event"}, type=${eventType}]`;
-        }
-        if (!line && !isSelfDiscovery) {
-          line = JSON.stringify(d);
+        const token = payload.token || nested.token || "";
+        if (token) {
+          this._token = token;
         }
 
-        if (line) {
-          this._consoleLines.push(line);
-          if (this._consoleLines.length > 500) this._consoleLines.shift();
+        const terminalLine = payload.output || nested.output || "";
+        let statusLine = "";
+        if (!terminalLine && token) {
+          statusLine = `Token[${payload.deviceid || nested.deviceid || eventHost || "?"}]: ${token}`;
         }
+        if (!terminalLine && !statusLine && isDiscovery && eventHost && !isSelfDiscovery) {
+          statusLine = `[URCON] Discovered neighbor: ${eventHost} (${eventIp}) [src=${d.source || "event"}, type=${eventType}]`;
+        }
+        if (!terminalLine && !statusLine && payload.raw) {
+          statusLine = String(payload.raw);
+        }
+        if (!terminalLine && !statusLine && !isSelfDiscovery && (payload.topic || d.topic)) {
+          statusLine = `[MQTT] ${payload.topic || d.topic}`;
+        }
+
+        if (terminalLine) this._pushTerminal(terminalLine);
+        if (statusLine) this._pushStatus(statusLine);
         this._render();
       }, "unircon_console");
     }
+  }
+
+  _pushTerminal(line) {
+    if (!line) return;
+    this._terminalLines.push(String(line));
+    if (this._terminalLines.length > 500) this._terminalLines.shift();
+  }
+
+  _pushStatus(line) {
+    if (!line) return;
+    this._statusLines.push(String(line));
+    if (this._statusLines.length > 500) this._statusLines.shift();
   }
 
   // ===== MQTT WebSocket (Phase 2) =====
@@ -107,15 +131,15 @@ class UNiNUSConsoleCard extends HTMLElement {
   _persistBrokerSettings(showMessage = true) {
     this._broker = this._readBrokerInputs();
     if (!this._broker.host) {
-      this._consoleLines.push("[ERROR] MQTT broker host is empty");
+      this._pushStatus("[ERROR] MQTT broker host is empty");
       return false;
     }
     try {
       localStorage.setItem("unircon_broker", JSON.stringify(this._broker));
-      if (showMessage) this._consoleLines.push(`[MQTT] Settings saved (${this._broker.host}:${this._broker.port})`);
+      if (showMessage) this._pushStatus(`[MQTT] Settings saved (${this._broker.host}:${this._broker.port})`);
       return true;
     } catch (e) {
-      this._consoleLines.push(`[ERROR] Failed to save MQTT settings: ${e.message}`);
+      this._pushStatus(`[ERROR] Failed to save MQTT settings: ${e.message}`);
       return false;
     }
   }
@@ -128,7 +152,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     ws.onopen = () => {
       opened = true;
       this._connected = true;
-      this._consoleLines.push(`[MQTT] Connected to ${url}`);
+      this._pushStatus(`[MQTT] Connected to ${url}`);
       const hosts = this.config.hosts || [];
       const discoveryHost = (b.hostName || "urcon").trim() || "urcon";
       const topics = new Set([
@@ -145,7 +169,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       const subscribeAll = (phase) => {
         if (this._mqtt !== ws || !this._connected) return;
         topics.forEach(topic => ws.send(JSON.stringify({ cmd: "sub", topic })));
-        this._consoleLines.push(`[MQTT] Subscribed${phase ? ` (${phase})` : ""}: ${Array.from(topics).join(", ")}`);
+        this._pushStatus(`[MQTT] Subscribed${phase ? ` (${phase})` : ""}: ${Array.from(topics).join(", ")}`);
         this._render();
       };
       if (b.username) {
@@ -163,7 +187,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       const debugWindow = this._debugRawWsUntil && Date.now() < this._debugRawWsUntil;
       const debugSeq = ++this._wsFrameSeq;
       if (debugWindow) {
-        this._consoleLines.push(`[WS#${debugSeq}] ${raw.substring(0, 500)}`);
+        this._pushStatus(`[WS#${debugSeq}] ${raw.substring(0, 500)}`);
       }
       try {
         const msg = JSON.parse(raw);
@@ -178,27 +202,29 @@ class UNiNUSConsoleCard extends HTMLElement {
           payload = msg.data;
         }
 
-        if (payload && payload.output) {
-          this._consoleLines.push(payload.output);
-        } else if (payload && payload.token) {
-          this._consoleLines.push(`Token[${payload.deviceid || payload.host || "?"}]: ${payload.token}`);
-          this._token = payload.token;
+        const nested = payload && typeof payload.data === "object" ? payload.data : {};
+        const token = (payload && payload.token) || nested.token || "";
+        const output = (payload && payload.output) || nested.output || "";
+        if (output) {
+          this._pushTerminal(output);
+        } else if (token) {
+          this._pushStatus(`Token[${payload.deviceid || nested.deviceid || payload.host || "?"}]: ${token}`);
+          this._token = token;
         } else if (payload && (payload.type === 13 || payload.type === 14) && payload.host) {
-          this._consoleLines.push(`[URCON] Raw discovery: ${JSON.stringify(payload)}`);
+          this._pushStatus(`[URCON] Raw discovery: ${JSON.stringify(payload)}`);
         } else if (!debugWindow) {
-          this._consoleLines.push(raw.substring(0, 500));
+          this._pushStatus(raw.substring(0, 500));
         }
         if (payload && payload.host && (payload.type === 13 || payload.type === 14)) {
           const name = payload.host;
           if (!this._neighbors.includes(name)) {
             this._neighbors.push(name);
-            this._consoleLines.push(`[URCON] Discovered neighbor: ${name} (${payload.ip || ""})`);
+            this._pushStatus(`[URCON] Discovered neighbor: ${name} (${payload.ip || ""})`);
           }
         }
       } catch(_) {
-        if (!debugWindow) this._consoleLines.push(raw.substring(0, 500));
+        if (!debugWindow) this._pushStatus(raw.substring(0, 500));
       }
-      if (this._consoleLines.length > 500) this._consoleLines.shift();
       this._render();
     };
 
@@ -206,25 +232,25 @@ class UNiNUSConsoleCard extends HTMLElement {
       this._connected = false;
       if (!opened && remainingUrls.length) {
         const nextUrl = remainingUrls.shift();
-        this._consoleLines.push(`[MQTT] WS connect failed, trying ${nextUrl}`);
+        this._pushStatus(`[MQTT] WS connect failed, trying ${nextUrl}`);
         this._tryMqttUrls(b, [nextUrl, ...remainingUrls]);
         return;
       }
-      this._consoleLines.push("[MQTT] Disconnected");
+      this._pushStatus("[MQTT] Disconnected");
       this._render();
     };
 
     ws.onerror = () => {
       this._connected = false;
       if (!opened) return;
-      this._consoleLines.push("[MQTT] Connection error - check broker address/port");
+      this._pushStatus("[MQTT] Connection error - check broker address/port");
       this._render();
     };
   }
 
   _tryMqttUrls(b, urls) {
     if (!urls.length) {
-      this._consoleLines.push("[ERROR] MQTT WebSocket connect failed for all candidate URLs");
+      this._pushStatus("[ERROR] MQTT WebSocket connect failed for all candidate URLs");
       this._render();
       return;
     }
@@ -236,7 +262,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       if (remainingUrls.length) {
         this._tryMqttUrls(b, remainingUrls);
       } else {
-        this._consoleLines.push(`[MQTT] Error: ${e.message}`);
+        this._pushStatus(`[MQTT] Error: ${e.message}`);
         this._render();
       }
     }
@@ -246,7 +272,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const saved = this._persistBrokerSettings(false);
     const b = this._broker;
     if (!b.host) {
-      this._consoleLines.push("[ERROR] MQTT broker host not configured");
+      this._pushStatus("[ERROR] MQTT broker host not configured");
       this._render();
       return;
     }
@@ -259,7 +285,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     candidates.push(`ws://${b.host}:${b.port}`);
     candidates.push(`ws://${b.host}:${b.port}/mqtt`);
     const deduped = [...new Set(candidates)];
-    if (saved) this._consoleLines.push(`[MQTT] Using broker ${b.host}:${b.port}`);
+    if (saved) this._pushStatus(`[MQTT] Using broker ${b.host}:${b.port}`);
     this._tryMqttUrls(b, deduped);
   }
 
@@ -286,19 +312,19 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._commandHistory.push(cmd);
     this._historyIdx = this._commandHistory.length;
     const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
-    this._consoleLines.push(`--> ${cmd}`);
+    this._pushTerminal(`--> ${cmd}`);
     this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
     inp.value = "";
   }
   _hotkey(cmd) {
     const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
-    this._consoleLines.push(`--> ${cmd}`);
+    this._pushTerminal(`--> ${cmd}`);
     this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
   }
   _reqToken() {
     const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
     this._hass.callService("unircon", "request_token", { host }).catch(() => {});
-    this._consoleLines.push("--> Requesting token...");
+    this._pushStatus("--> Requesting token...");
   }
 
   // ===== Deploy config (Phase 3) =====
@@ -332,7 +358,7 @@ class UNiNUSConsoleCard extends HTMLElement {
   _copyDeploy() {
     const text = this._genDeploy();
     navigator.clipboard.writeText(text).then(() => {
-      this._consoleLines.push("[Deploy] 已複製到剪貼簿");
+      this._pushStatus("[Deploy] 已複製到剪貼簿");
       this._render();
     }).catch(() => {});
   }
@@ -356,27 +382,27 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (!hostEl || !cmdEl) return;
     const hosts = hostEl.value.split(/\r?\n+/).map(s => s.trim()).filter(Boolean);
     const cmds = cmdEl.value.split(/\r?\n+/).map(s => s.trim()).filter(Boolean);
-    if (!hosts.length || !cmds.length) { this._consoleLines.push("[Batch] 主機清單或指令為空"); this._render(); return; }
+    if (!hosts.length || !cmds.length) { this._pushStatus("[Batch] 主機清單或指令為空"); this._render(); return; }
     this._batchRunning = true;
-    this._consoleLines.push(`[Batch] 開始：${hosts.length} 台主機 × ${cmds.length} 條指令`);
+    this._pushStatus(`[Batch] 開始：${hosts.length} 台主機 × ${cmds.length} 條指令`);
     this._render();
     for (const host of hosts) {
-      this._consoleLines.push(`[Batch] === ${host} ===`);
+      this._pushStatus(`[Batch] === ${host} ===`);
       this._render();
       // Request token
       this._hass.callService("unircon", "request_token", { host }).catch(() => {});
       await new Promise(r => setTimeout(r, 2000));
       for (const cmd of cmds) {
-        this._consoleLines.push(`[${host}] --> ${cmd}`);
+        this._pushTerminal(`[${host}] --> ${cmd}`);
         this._hass.callService("unircon", "send_command", { host, command: cmd }).catch(() => {});
         this._render();
         await new Promise(r => setTimeout(r, 1500));
       }
-      this._consoleLines.push(`[Batch] ${host} 完成`);
+      this._pushStatus(`[Batch] ${host} 完成`);
       this._render();
     }
     this._batchRunning = false;
-    this._consoleLines.push("[Batch] 全部完成");
+    this._pushStatus("[Batch] 全部完成");
     this._render();
   }
 
@@ -393,8 +419,8 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._wsFrameSeq = 0;
     this._neighbors = [];
     this._hass.callService("unircon", "collect_neighbors", serviceData).catch(() => {});
-    this._consoleLines.push(`--> Searching for UNiNUS neighbors... callback=${serviceData.callback_ip || "(auto)"}`);
-    this._consoleLines.push("[INFO] Discovery display now follows backend MQTT events first; WS raw capture stays enabled for 20s as debug only");
+    this._pushStatus(`--> Searching for UNiNUS neighbors... callback=${serviceData.callback_ip || "(auto)"}`);
+    this._pushStatus("[INFO] Discovery display now follows backend MQTT events first; WS raw capture stays enabled for 20s as debug only");
     this._render();
   }
   _addNeighbor(host) {
@@ -402,7 +428,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (!this.config.hosts.includes(host)) {
       this.config.hosts.push(host);
       this._hass.callService("unircon", "add_device", { host }).catch(() => {});
-      this._consoleLines.push(`[URCON] Added ${host} to host list`);
+      this._pushStatus(`[URCON] Added ${host} to host list`);
       this._render();
     }
   }
@@ -411,13 +437,13 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (!this.config.hosts) this.config.hosts = [];
     const pending = this._neighbors.filter((host) => !this.config.hosts.includes(host));
     if (!pending.length) {
-      this._consoleLines.push("[URCON] 沒有新的鄰居可加入");
+      this._pushStatus("[URCON] 沒有新的鄰居可加入");
       this._render();
       return;
     }
     this.config.hosts.push(...pending);
     pending.forEach((host) => this._hass.callService("unircon", "add_device", { host }).catch(() => {}));
-    this._consoleLines.push(`[URCON] Added ${pending.length} neighbors to host list: ${pending.join(", ")}`);
+    this._pushStatus(`[URCON] Added ${pending.length} neighbors to host list: ${pending.join(", ")}`);
     this._render();
   }
 
@@ -427,10 +453,11 @@ class UNiNUSConsoleCard extends HTMLElement {
   _render() {
     const hosts = this.config.hosts || [];
     const sel = this._selectedHost || hosts[0] || "";
-    const lines = this._consoleLines.slice(-150).join("\n");
+    const terminalLines = this._terminalLines.slice(-150).join("\n");
+    const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.33";
+    const buildVersion = "1.0.34";
 
     this.innerHTML = `
     <style>
@@ -456,7 +483,11 @@ class UNiNUSConsoleCard extends HTMLElement {
       .uhk button{padding:2px 7px;font-size:11.5px;border:1px solid var(--divider-color,#ccc);background:var(--card-background,#fafafa);cursor:pointer;border-radius:3px}
       .uhk button:hover{background:var(--primary-color,#03a9f4);color:#fff}
       .ucns{margin:6px 10px}
-      .ucns textarea{width:100%;height:260px;font-family:monospace;font-size:12.5px;background:#1e1e1e;color:#d4d4d4;padding:8px;border-radius:5px;resize:vertical;box-sizing:border-box}
+      .ucblk{margin-bottom:8px}
+      .uclbl{font-size:12px;font-weight:700;color:var(--secondary-text-color,#666);margin:0 0 4px 0}
+      .ucns textarea{width:100%;font-family:monospace;font-size:12.5px;padding:8px;border-radius:5px;resize:vertical;box-sizing:border-box}
+      #uc-out{height:220px;background:#1e1e1e;color:#d4d4d4}
+      #uc-stat{height:120px;background:#111827;color:#cbd5e1;border:1px solid rgba(148,163,184,.25)}
       .ucnr{display:flex;gap:5px;margin-top:5px}
       .ucnr input{flex:1;padding:5px 8px;font-family:monospace;font-size:12.5px;border:1px solid var(--divider-color,#ccc);border-radius:4px}
       .ucnr button{padding:5px 12px;background:var(--primary-color,#03a9f4);color:#fff;border:none;border-radius:4px;cursor:pointer}
@@ -512,7 +543,14 @@ class UNiNUSConsoleCard extends HTMLElement {
           <button data-cmd="backup">Backup</button>
         </div>
         <div class="ucns">
-          <textarea id="uc-out" readonly>${this._E(lines)}</textarea>
+          <div class="ucblk">
+            <div class="uclbl">訊息輸出 (Console Output)</div>
+            <textarea id="uc-out" readonly>${this._E(terminalLines)}</textarea>
+          </div>
+          <div class="ucblk">
+            <div class="uclbl">狀態訊息 (Stat Message)</div>
+            <textarea id="uc-stat" readonly>${this._E(statusLines)}</textarea>
+          </div>
           <div class="ucnr">
             <input id="uc-cmd" placeholder="輸入指令 (Ctrl+Enter 送出 ↑↓ 歷史)" />
             <button id="uc-send">執行</button>
@@ -605,6 +643,8 @@ class UNiNUSConsoleCard extends HTMLElement {
     // Console
     const ta = this.querySelector("#uc-out");
     if (ta) ta.scrollTop = ta.scrollHeight;
+    const ts = this.querySelector("#uc-stat");
+    if (ts) ts.scrollTop = ts.scrollHeight;
     const hs = this.querySelector("#uc-host");
     if (hs) hs.addEventListener("change", e => { this._selectedHost = e.target.value; });
     const ti = this.querySelector("#uc-tokin");
