@@ -324,6 +324,20 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._pushTerminal(`--> ${cmd}`);
     this._hass.callService("unircon", "send_command", { host, command: cmd, token: this._token }).catch(() => {});
   }
+  _downloadOutput() {
+    const text = this._terminalLines.join("\n");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `console_${this._selectedHost || "output"}_${new Date().toISOString().slice(0,10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  _clearOutput() {
+    this._terminalLines = [];
+    this._render();
+  }
   _reqToken() {
     const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
     this._hass.callService("unircon", "request_token", { host }).catch(() => {});
@@ -460,7 +474,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.36";
+    const buildVersion = "1.0.37";
 
     this.innerHTML = `
     <style>
@@ -547,7 +561,13 @@ class UNiNUSConsoleCard extends HTMLElement {
         </div>
         <div class="ucns">
           <div class="ucblk">
-            <div class="uclbl">訊息輸出 (Console Output)</div>
+            <div class="uclbl">
+              訊息輸出 (Console Output)
+              <span style="margin-left:auto;display:flex;gap:4px">
+                <button id="uc-dl-out" title="下載輸出">📥 下載</button>
+                <button id="uc-clr-out" title="清除輸出">🗑️ 清除</button>
+              </span>
+            </div>
             <textarea id="uc-out" readonly>${this._E(terminalLines)}</textarea>
           </div>
           <div class="ucblk">
@@ -654,6 +674,10 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (ti) ti.addEventListener("change", e => { this._token = e.target.value; });
     const sb = this.querySelector("#uc-send");
     if (sb) sb.addEventListener("click", () => this._sendCmd());
+    const dlOut = this.querySelector("#uc-dl-out");
+    if (dlOut) dlOut.addEventListener("click", () => this._downloadOutput());
+    const clrOut = this.querySelector("#uc-clr-out");
+    if (clrOut) clrOut.addEventListener("click", () => this._clearOutput());
     const ci = this.querySelector("#uc-cmd");
     if (ci) {
       ci.addEventListener("keydown", e => {
