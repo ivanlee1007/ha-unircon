@@ -8,7 +8,6 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.helpers import selector
 
 from .const import (
     CONF_BROKER_HOST,
@@ -32,6 +31,10 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    def __init__(self) -> None:
+        """Initialize the config flow."""
+        self._broker_config: dict[str, Any] = {}
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
@@ -42,7 +45,10 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate MQTT connection
             try:
                 def _test_mqtt() -> tuple[bool, str]:
-                    import paho.mqtt.client as mqtt
+                    try:
+                        import paho.mqtt.client as mqtt
+                    except ImportError:
+                        return False, "paho_mqtt_not_installed"
 
                     # Use v2 API if available (paho-mqtt >= 2.0), fallback to v1
                     try:
@@ -50,40 +56,45 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
                             client_id="ha-unircon-setup",
                         )
-                    except AttributeError:
+                    except (AttributeError, TypeError):
+                        # paho-mqtt 1.x - no callback_api_version parameter
                         client = mqtt.Client(
                             client_id="ha-unircon-setup",
                         )
 
-                    client.username_pw_set(
-                        user_input.get(CONF_USERNAME, ""),
-                        user_input.get(CONF_PASSWORD, ""),
-                    )
+                    username = user_input.get(CONF_USERNAME, "")
+                    password = user_input.get(CONF_PASSWORD, "")
+                    if username:
+                        client.username_pw_set(username, password)
+
+                    broker_host = user_input[CONF_BROKER_HOST]
+                    broker_port = int(user_input.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT))
+
                     try:
-                        client.connect(
-                            user_input[CONF_BROKER_HOST],
-                            int(user_input.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT)),
-                            timeout=10,
-                        )
+                        client.connect(broker_host, broker_port, timeout=10)
                         client.disconnect()
                         return True, ""
                     except ConnectionRefusedError:
                         return False, "cannot_connect"
-                    except TimeoutError:
-                        return False, "cannot_connect"
+                    except OSError as err:
+                        # EHOSTUNREACH, ETIMEDOUT, etc.
+                        return False, f"cannot_connect: {err}"
                     except Exception as err:
                         return False, str(err)
 
                 ok, err = await self.hass.async_add_executor_job(_test_mqtt)
                 if not ok:
-                    errors["base"] = "cannot_connect" if err == "cannot_connect" else "unknown"
                     _LOGGER.warning("MQTT test failed: %s", err)
+                    if "paho_mqtt" in err:
+                        errors["base"] = "cannot_connect"
+                    else:
+                        errors["base"] = "cannot_connect"
             except Exception as err:
-                _LOGGER.error("MQTT validation error: %s", err)
-                errors["base"] = "unknown"
+                _LOGGER.exception("MQTT validation error: %s", err)
+                errors["base"] = "cannot_connect"
 
             if not errors:
-                self._broker_config = user_input
+                self._broker_config = dict(user_input)
                 return await self.async_step_devices()
 
         return self.async_show_form(
@@ -92,8 +103,8 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_BROKER_HOST, default="192.168.1.222"): str,
                     vol.Required(CONF_BROKER_PORT, default=DEFAULT_BROKER_PORT): int,
-                    vol.Required(CONF_USERNAME, default="admin"): str,
-                    vol.Required(CONF_PASSWORD, default="uninus@99"): str,
+                    vol.Optional(CONF_USERNAME, default="admin"): str,
+                    vol.Optional(CONF_PASSWORD, default=""): str,
                     vol.Optional(CONF_DOMAIN, default=DEFAULT_DOMAIN): str,
                 }
             ),
@@ -114,8 +125,10 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if h.strip()
             ]
 
+            broker_host = self._broker_config.get(CONF_BROKER_HOST, "unknown")
+
             return self.async_create_entry(
-                title=f"UNiNUS ({self._broker_config[CONF_BROKER_HOST]})",
+                title=f"UNiNUS ({broker_host})",
                 data={
                     **self._broker_config,
                     CONF_HOSTS: hosts,
@@ -133,7 +146,9 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data: dict[str, Any]) -> config_entries.ConfigFlowResult:
+    async def async_step_reauth(
+        self, entry_data: dict[str, Any]
+    ) -> config_entries.ConfigFlowResult:
         """Handle reauthorization."""
         return await self.async_step_reauth_confirm()
 
@@ -144,7 +159,9 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+            entry = self.hass.config_entries.async_get_entry(
+                self.context["entry_id"]
+            )
             if entry:
                 self.hass.config_entries.async_update_entry(
                     entry,
