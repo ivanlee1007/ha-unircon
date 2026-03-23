@@ -34,6 +34,8 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._nbFilter = "";
     this._nbChecked = new Set();
     this._nbCollapsed = false;
+    this._sites = [];
+    this._activeSiteName = "";
     this._cmdQueue = [];
     this._waitingReply = false;
     // Restore broker settings from localStorage
@@ -41,6 +43,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       const s = localStorage.getItem("unircon_broker");
       if (s) this._broker = JSON.parse(s);
     } catch(_) {}
+    this._loadSites();
     this._broker = this._broker || {
       host: (this.config.broker && this.config.broker.host) || "",
       port: (this.config.broker && this.config.broker.port) || 1884,
@@ -532,6 +535,67 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (this._nbChecked.has(host)) this._nbChecked.delete(host); else this._nbChecked.add(host);
   }
 
+  // ===== Site Manager =====
+  _loadSites() {
+    try {
+      const s = localStorage.getItem("unircon_sites");
+      this._sites = s ? JSON.parse(s) : [];
+    } catch(_) { this._sites = []; }
+    this._activeSiteName = localStorage.getItem("unircon_active_site") || "";
+  }
+  _persistSites() {
+    try { localStorage.setItem("unircon_sites", JSON.stringify(this._sites)); } catch(_) {}
+  }
+  _loadSite(name) {
+    const site = this._sites.find(s => s.name === name);
+    if (!site) return;
+    this._activeSiteName = name;
+    localStorage.setItem("unircon_active_site", name);
+    this._broker = { host: site.host, port: site.port, username: site.username, password: site.password, domain: site.domain };
+    try { localStorage.setItem("unircon_broker", JSON.stringify(this._broker)); } catch(_) {}
+    // Update form inputs
+    const q = (sel, def) => { const el = this.querySelector(sel); return el ? el.value : def; };
+    const setVal = (sel, val) => { const el = this.querySelector(sel); if (el) el.value = val || ""; };
+    setVal("#ms-host", site.host);
+    setVal("#ms-port", site.port);
+    setVal("#ms-user", site.username);
+    setVal("#ms-pass", site.password);
+    setVal("#ms-domain", site.domain);
+  }
+  _saveSite() {
+    const site = {
+      name: (this.querySelector("#ms-site")?.value || "").trim(),
+      host: this.querySelector("#ms-host")?.value?.trim() || "",
+      port: parseInt(this.querySelector("#ms-port")?.value, 10) || 1884,
+      username: this.querySelector("#ms-user")?.value || "",
+      password: this.querySelector("#ms-pass")?.value || "",
+      domain: this.querySelector("#ms-domain")?.value?.trim() || "uninus",
+    };
+    if (!site.host) { this._pushStatus("[ERROR] 請先填寫 Broker 位址"); return; }
+    if (!site.name) {
+      site.name = prompt("請輸入設定名稱：", site.host) || "";
+      if (!site.name) return;
+    }
+    const idx = this._sites.findIndex(s => s.name === site.name);
+    if (idx >= 0) this._sites[idx] = site; else this._sites.push(site);
+    this._activeSiteName = site.name;
+    this._persistSites();
+    localStorage.setItem("unircon_active_site", site.name);
+    this._pushStatus(`[MQTT] Site saved: ${site.name}`);
+    this._render();
+  }
+  _deleteSite() {
+    const name = this._activeSiteName;
+    if (!name) return;
+    if (!confirm(`刪除「${name}」設定？`)) return;
+    this._sites = this._sites.filter(s => s.name !== name);
+    this._activeSiteName = "";
+    localStorage.setItem("unircon_active_site", "");
+    this._persistSites();
+    this._pushStatus(`[MQTT] Site deleted: ${name}`);
+    this._render();
+  }
+
   // ===== Rendering =====
   _E(v) { return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
@@ -542,7 +606,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.41";
+    const buildVersion = "1.0.42";
 
     this.innerHTML = `
     <style>
@@ -701,6 +765,15 @@ class UNiNUSConsoleCard extends HTMLElement {
       <!-- Tab: MQTT (Phase 5) -->
       <div class="tp ${this._tab==='mqtt'?'on':''}" id="tp-mqtt">
         <div class="msf">
+          <!-- Site Manager -->
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;padding:6px 8px;background:rgba(255,255,255,.06);border-radius:6px;border:1px solid var(--divider-color,#ddd)">
+            <select id="ms-site" style="flex:1;height:28px;padding:2px 6px;font-size:12px;border:1px solid var(--divider-color,#ccc);border-radius:4px;background:rgba(255,255,255,.08);color:inherit">
+              <option value="">-- 自訂設定 --</option>
+              ${(this._sites||[]).map(s => `<option value="${this._E(s.name)}" ${s.name===this._activeSiteName?'selected':''}>${this._E(s.name)}</option>`).join("")}
+            </select>
+            <button id="ms-save-site" style="font-size:11px;padding:3px 8px;background:#4caf50;color:#fff;border:none;border-radius:3px;cursor:pointer">💾 儲存</button>
+            <button id="ms-del-site" style="font-size:11px;padding:3px 8px;background:#d9534f;color:#fff;border:none;border-radius:3px;cursor:pointer">🗑️</button>
+          </div>
           <div class="row"><label>Broker</label><input id="ms-host" value="${this._E(this._broker.host)}" placeholder="192.168.1.222"/></div>
           <div class="row"><label>WebSocket Port</label><input id="ms-port" value="${this._E(this._broker.port)}" placeholder="1884" style="width:80px"/></div>
           <div class="row"><label>Username</label><input id="ms-user" value="${this._E(this._broker.username)}"/></div>
@@ -852,6 +925,13 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (msConn) msConn.addEventListener("click", () => this._mqttConnect());
     const msDisc = this.querySelector("#ms-disconnect");
     if (msDisc) msDisc.addEventListener("click", () => this._mqttDisconnect());
+    // Site Manager
+    const msSite = this.querySelector("#ms-site");
+    if (msSite) msSite.addEventListener("change", (e) => { if (e.target.value) this._loadSite(e.target.value); });
+    const msSaveSite = this.querySelector("#ms-save-site");
+    if (msSaveSite) msSaveSite.addEventListener("click", () => this._saveSite());
+    const msDelSite = this.querySelector("#ms-del-site");
+    if (msDelSite) msDelSite.addEventListener("click", () => this._deleteSite());
     const msPub = this.querySelector("#ms-pub");
     if (msPub) msPub.addEventListener("click", () => {
       const t = this.querySelector("#ms-topic").value;
