@@ -540,4 +540,14 @@ class UNiNUSConsoleCard extends HTMLElement {
   }
 }
 
-customElements.define("unircon-console-card", UNiNUSConsoleCard);
+if (!customElements.get("unircon-console-card")) {
+  customElements.define("unircon-console-card", UNiNUSConsoleCard);
+}
+window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === "unircon-console-card")) {
+  window.customCards.push({
+    type: "unircon-console-card",
+    name: "UNiNUS Remote Console Card",
+    description: "UNiNUS MQTT remote console dashboard card (bundled with ha-unircon)",
+  });
+}

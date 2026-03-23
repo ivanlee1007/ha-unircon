@@ -11,6 +11,9 @@
   "requirements": [
     "paho-mqtt>=1.6.0"
   ],
-  "version": "1.0.9",
+  "dependencies": [
+    "frontend"
+  ],
+  "version": "1.0.10",
   "homeassistant": "2024.1.0"
 }
