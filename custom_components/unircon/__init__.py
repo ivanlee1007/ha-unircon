@@ -11,7 +11,6 @@ from homeassistant.components import frontend
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.http import StaticPath
 import voluptuous as vol
 
 from .const import (
