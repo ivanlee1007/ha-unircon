@@ -31,18 +31,17 @@ request_token:
       name: Host
       description: Target device hostname.
       required: true
-      example: "sensor01"
       selector:
         text:
     username:
       name: Username
-      description: Login username (optional, uses config default if empty).
+      description: Login username.
       required: false
       selector:
         text:
     password:
       name: Password
-      description: Login password (optional, uses config default if empty).
+      description: Login password.
       required: false
       selector:
         text:
@@ -55,19 +54,17 @@ batch_command:
       name: Hosts
       description: List of target hostnames.
       required: true
-      example: "['sensor01', 'sensor02']"
       selector:
         object:
     commands:
       name: Commands
       description: List of commands to execute on each host.
       required: true
-      example: "['sh ver', 'sh result']"
       selector:
         object:
     delay:
       name: Delay
-      description: Delay in seconds between commands (default: 1).
+      description: Delay in seconds between commands.
       required: false
       default: 1
       selector:
@@ -84,17 +81,111 @@ mqtt_publish:
       name: Topic
       description: MQTT topic to publish to.
       required: true
-      example: "ha/test/topic"
       selector:
         text:
     payload:
       name: Payload
       description: Message payload.
       required: true
-      example: '{"msg":"hello"}'
       selector:
         text:
 
 collect_neighbors:
   name: Collect UNiNUS neighbors
   description: Discover UNiNUS devices on the network via URCOM protocol.
+
+generate_deploy:
+  name: Generate deploy config
+  description: Generate device deployment configuration text.
+  fields:
+    backup_protocol:
+      name: Backup protocol
+      description: Backup protocol (ftp/http/tftp).
+      selector:
+        text:
+    backup_server:
+      name: Backup server
+      description: Backup server address.
+      selector:
+        text:
+    backup_file:
+      name: Backup file
+      description: Backup file path pattern.
+      selector:
+        text:
+    update_protocol:
+      name: Update protocol
+      description: Update protocol (mqtt/http/tcp).
+      selector:
+        text:
+    update_server:
+      name: Update server
+      description: Update server address.
+      selector:
+        text:
+    update_port:
+      name: Update port
+      description: Update server port.
+      selector:
+        text:
+    update_user:
+      name: Update user
+      description: Update server username.
+      selector:
+        text:
+    update_password:
+      name: Update password
+      description: Update server password.
+      selector:
+        text:
+    update_subscribe:
+      name: Subscribe topic
+      description: Subscribe topic pattern.
+      selector:
+        text:
+    update_publish:
+      name: Publish topic
+      description: Publish topic pattern.
+      selector:
+        text:
+    update_publish_response:
+      name: Publish response topic
+      description: Publish response topic pattern.
+      selector:
+        text:
+    update_publish_log:
+      name: Publish log topic
+      description: Publish log topic pattern.
+      selector:
+        text:
+    sta_ssid:
+      name: WiFi SSID
+      description: WiFi network name.
+      selector:
+        text:
+    sta_password:
+      name: WiFi password
+      description: WiFi password.
+      selector:
+        text:
+    ntp_server:
+      name: NTP server
+      description: NTP server address.
+      selector:
+        text:
+    ntp_timezone:
+      name: NTP timezone
+      description: NTP timezone offset.
+      selector:
+        text:
+
+add_device:
+  name: Add device
+  description: Add a new device to the integration (from neighbor discovery or manual).
+  fields:
+    host:
+      name: Host
+      description: Device hostname to add.
+      required: true
+      selector:
+        text:

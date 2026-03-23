@@ -54,35 +54,12 @@
     }
   },
   "services": {
-    "send_command": {
-      "name": "Send Command",
-      "description": "Send a command to a UNiNUS device.",
-      "fields": {
-        "host": { "name": "Host", "description": "Target device hostname" },
-        "command": { "name": "Command", "description": "Command to execute" },
-        "token": { "name": "Token", "description": "Device token (optional)" }
-      }
-    },
-    "batch_command": {
-      "name": "Batch Command",
-      "description": "Execute commands across multiple devices.",
-      "fields": {
-        "hosts": { "name": "Hosts", "description": "List of target hostnames" },
-        "commands": { "name": "Commands", "description": "List of commands to execute" },
-        "delay": { "name": "Delay", "description": "Seconds between commands" }
-      }
-    },
-    "request_token": {
-      "name": "Request Token",
-      "description": "Request device token/serial number."
-    },
-    "mqtt_publish": {
-      "name": "MQTT Publish",
-      "description": "Publish a test MQTT message."
-    },
-    "collect_neighbors": {
-      "name": "Collect Neighbors",
-      "description": "Discover UNiNUS devices on the network."
-    }
+    "send_command": { "name": "Send Command", "description": "Send a command to a UNiNUS device." },
+    "batch_command": { "name": "Batch Command", "description": "Execute commands across multiple devices." },
+    "request_token": { "name": "Request Token", "description": "Request device token/serial number." },
+    "mqtt_publish": { "name": "MQTT Publish", "description": "Publish a test MQTT message." },
+    "collect_neighbors": { "name": "Collect Neighbors", "description": "Discover UNiNUS devices on the network." },
+    "generate_deploy": { "name": "Generate Deploy Config", "description": "Generate device deployment configuration." },
+    "add_device": { "name": "Add Device", "description": "Add a new device to the integration." }
   }
 }

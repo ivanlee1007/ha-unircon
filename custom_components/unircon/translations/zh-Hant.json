@@ -39,66 +39,27 @@
   },
   "entity": {
     "sensor": {
-      "console": {
-        "name": "Console 輸出"
-      },
-      "status": {
-        "name": "設備狀態"
-      }
+      "console": { "name": "Console 輸出" },
+      "status": { "name": "設備狀態" }
     },
     "button": {
-      "enable": {
-        "name": "Enable"
-      },
-      "show_version": {
-        "name": "顯示版本"
-      },
-      "show_result": {
-        "name": "顯示結果"
-      },
-      "urcon_neighbors": {
-        "name": "URCON 鄰居"
-      },
-      "backup": {
-        "name": "備份"
-      }
+      "enable": { "name": "Enable" },
+      "show_version": { "name": "顯示版本" },
+      "show_result": { "name": "顯示結果" },
+      "urcon_neighbors": { "name": "URCON 鄰居" },
+      "backup": { "name": "備份" }
     },
     "text": {
-      "token": {
-        "name": "設備序號"
-      }
+      "token": { "name": "設備序號" }
     }
   },
   "services": {
-    "send_command": {
-      "name": "下指令",
-      "description": "對 UNiNUS 設備下指令。",
-      "fields": {
-        "host": { "name": "主機", "description": "目標設備主機名稱" },
-        "command": { "name": "指令", "description": "要執行的指令" },
-        "token": { "name": "序號", "description": "設備序號（可選）" }
-      }
-    },
-    "batch_command": {
-      "name": "批次指令",
-      "description": "對多台設備執行批次指令。",
-      "fields": {
-        "hosts": { "name": "主機清單", "description": "目標主機列表" },
-        "commands": { "name": "指令清單", "description": "要執行的指令列表" },
-        "delay": { "name": "延遲", "description": "指令間隔秒數" }
-      }
-    },
-    "request_token": {
-      "name": "要求序號",
-      "description": "向設備要求序號/Token。"
-    },
-    "mqtt_publish": {
-      "name": "MQTT 發佈",
-      "description": "測試發佈 MQTT 訊息。"
-    },
-    "collect_neighbors": {
-      "name": "蒐集鄰居",
-      "description": "探索網路上的 UNiNUS 設備。"
-    }
+    "send_command": { "name": "下指令", "description": "對 UNiNUS 設備下指令。" },
+    "batch_command": { "name": "批次指令", "description": "對多台設備執行批次指令。" },
+    "request_token": { "name": "要求序號", "description": "向設備要求序號/Token。" },
+    "mqtt_publish": { "name": "MQTT 發佈", "description": "測試發佈 MQTT 訊息。" },
+    "collect_neighbors": { "name": "蒐集鄰居", "description": "探索網路上的 UNiNUS 設備。" },
+    "generate_deploy": { "name": "生成部署檔", "description": "產生設備部署設定檔。" },
+    "add_device": { "name": "新增設備", "description": "新增一台設備到整合中。" }
   }
 }
