@@ -114,6 +114,7 @@ class UNiNUSConsoleCard extends HTMLElement {
   _setupWsSocketHandlers(ws, b, url, remainingUrls) {
     let opened = false;
     this._mqtt = ws;
+    this._wsFrameSeq = this._wsFrameSeq || 0;
 
     ws.onopen = () => {
       opened = true;
@@ -143,8 +144,14 @@ class UNiNUSConsoleCard extends HTMLElement {
     };
 
     ws.onmessage = (evt) => {
+      const raw = typeof evt.data === "string" ? evt.data : String(evt.data);
+      const debugWindow = this._debugRawWsUntil && Date.now() < this._debugRawWsUntil;
+      const debugSeq = ++this._wsFrameSeq;
+      if (debugWindow) {
+        this._consoleLines.push(`[WS#${debugSeq}] ${raw.substring(0, 500)}`);
+      }
       try {
-        const msg = JSON.parse(evt.data);
+        const msg = JSON.parse(raw);
         let payload = msg;
         if (typeof msg.payload === "string") {
           try {
@@ -163,8 +170,8 @@ class UNiNUSConsoleCard extends HTMLElement {
           this._token = payload.token;
         } else if (payload && (payload.type === 13 || payload.type === 14) && payload.host) {
           this._consoleLines.push(`[URCON] Raw discovery: ${JSON.stringify(payload)}`);
-        } else {
-          this._consoleLines.push(evt.data.substring(0, 500));
+        } else if (!debugWindow) {
+          this._consoleLines.push(raw.substring(0, 500));
         }
         if (payload && payload.host && (payload.type === 13 || payload.type === 14)) {
           const name = payload.host;
@@ -174,7 +181,7 @@ class UNiNUSConsoleCard extends HTMLElement {
           }
         }
       } catch(_) {
-        this._consoleLines.push(evt.data.substring(0, 500));
+        if (!debugWindow) this._consoleLines.push(raw.substring(0, 500));
       }
       if (this._consoleLines.length > 500) this._consoleLines.shift();
       this._render();
@@ -367,8 +374,11 @@ class UNiNUSConsoleCard extends HTMLElement {
       callback_ip: browserCallbackIp,
       urcon_domain: (broker.domain || "uninus").trim() || "uninus",
     };
+    this._debugRawWsUntil = Date.now() + 20000;
+    this._wsFrameSeq = 0;
     this._hass.callService("unircon", "collect_neighbors", serviceData).catch(() => {});
     this._consoleLines.push(`--> Searching for UNiNUS neighbors... callback=${serviceData.callback_ip || "(auto)"}`);
+    this._consoleLines.push("[DEBUG] Raw WS capture enabled for 20s");
     this._render();
   }
   _addNeighbor(host) {
@@ -389,7 +399,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const lines = this._consoleLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.25";
+    const buildVersion = "1.0.26";
 
     this.innerHTML = `
     <style>
