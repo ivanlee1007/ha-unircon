@@ -146,7 +146,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             except (json.JSONDecodeError, ValueError):
                 data = {"raw": payload}
 
-            if isinstance(data, dict) and data.get("type") == 13 and data.get("host"):
+            if isinstance(data, dict) and data.get("type") in (13, 14) and data.get("host"):
                 hass.bus.async_fire(
                     f"{DOMAIN}_console",
                     {

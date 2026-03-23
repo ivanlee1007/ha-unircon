@@ -128,9 +128,11 @@ class UNiNUSMQTT:
             return
         topic = TOPIC_URCOM.format(domain=self._domain)
         collect_topic = TOPIC_HOST_COLLECT.format(host_name=self._host_name)
+        legacy_collect_topic = "ha/sub/urcon"
         try:
             self._client.subscribe(topic, 1)
             self._client.subscribe(collect_topic, 1)
+            self._client.subscribe(legacy_collect_topic, 1)
         except Exception as err:
             _LOGGER.warning("URCOM subscribe failed: %s", err)
 
@@ -170,18 +172,18 @@ class UNiNUSMQTT:
             return
         topic = TOPIC_URCOM.format(domain=self._domain)
         payload = json.dumps({
-            "host": self._host_name,
+            "host": "urcon",
             "user": self._username,
             "pass": self._password,
             "plen": 0,
             "type": 13,
             "domain": self._domain,
-            "ip": "127.0.0.1",
-            "rch": f"ha/sub/{self._host_name}",
+            "ip": self._host,
+            "rch": "ha/sub/urcon",
             "payload": "",
         })
         self._client.publish(topic, payload, qos=0)
-        _LOGGER.info("URCOM neighbor collection sent to %s", topic)
+        _LOGGER.info("URCOM neighbor collection sent to %s payload=%s", topic, payload)
 
     @property
     def is_connected(self) -> bool:

@@ -59,7 +59,7 @@ class UNiNUSConsoleCard extends HTMLElement {
         const d = ev.data || {};
         const payload = d.data || {};
 
-        if ((payload.type === 13 || d.type === 13) && (payload.host || d.host)) {
+        if ((payload.type === 13 || payload.type === 14 || d.type === 13 || d.type === 14) && (payload.host || d.host)) {
           const name = payload.host || d.host;
           if (!this._neighbors.includes(name)) {
             this._neighbors.push(name);
@@ -68,7 +68,7 @@ class UNiNUSConsoleCard extends HTMLElement {
 
         const line = payload.output
           ? payload.output
-          : (payload.type === 13 && (payload.host || d.host))
+          : ((payload.type === 13 || payload.type === 14) && (payload.host || d.host))
             ? `[URCON] Discovered neighbor: ${payload.host || d.host} (${payload.ip || d.ip || ""})`
             : JSON.stringify(d);
         this._consoleLines.push(line);
@@ -118,7 +118,7 @@ class UNiNUSConsoleCard extends HTMLElement {
             this._consoleLines.push(evt.data.substring(0, 500));
           }
           // Neighbor detection (Phase 5)
-          if (msg.host && msg.type === 13) {
+          if (msg.host && (msg.type === 13 || msg.type === 14)) {
             const name = msg.host;
             if (!this._neighbors.includes(name)) {
               this._neighbors.push(name);
