@@ -508,7 +508,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._neighbors = [];
     this._hass.callService("unircon", "collect_neighbors", serviceData).catch(() => {});
     this._pushStatus(`--> Searching for UNiNUS neighbors... broker=${serviceData.broker_host}:${serviceData.broker_port}`);
-    this._pushStatus("[INFO] Discovery display follows backend MQTT events; WS raw capture stays enabled for 20s as debug");
+    this._pushStatus("[INFO] Backend MQTT 會持續使用當前 Broker，切換 Site 會影響所有後續操作");
     this._render();
   }
   _addNeighbor(host) {
@@ -629,7 +629,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.45";
+    const buildVersion = "1.0.46";
 
     this.innerHTML = `
     <style>
