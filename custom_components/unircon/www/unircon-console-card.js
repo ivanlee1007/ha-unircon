@@ -125,31 +125,52 @@ class UNiNUSConsoleCard extends HTMLElement {
         }));
       }
       const hosts = this.config.hosts || [];
+      const discoveryHost = (b.hostName || "urcon").trim() || "urcon";
+      const topics = new Set([
+        "ha/pub/+/console/#",
+        "ha/pubrsp/#",
+        `urcom/${(b.domain || "uninus").trim() || "uninus"}`,
+        `ha/sub/${discoveryHost}`,
+        "ha/sub/urcon",
+      ]);
       hosts.forEach(h => {
-        ws.send(JSON.stringify({ cmd: "sub", topic: `ha/pub/${h}/console/#` }));
-        ws.send(JSON.stringify({ cmd: "sub", topic: `ha/pubrsp/${h}/#` }));
+        topics.add(`ha/pub/${h}/console/#`);
+        topics.add(`ha/pubrsp/${h}/#`);
       });
-      ws.send(JSON.stringify({ cmd: "sub", topic: "ha/pub/+/console/#" }));
-      ws.send(JSON.stringify({ cmd: "sub", topic: "ha/pubrsp/#" }));
+      topics.forEach(topic => ws.send(JSON.stringify({ cmd: "sub", topic })));
+      this._consoleLines.push(`[MQTT] Subscribed: ${Array.from(topics).join(", ")}`);
       this._render();
     };
 
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data);
-        if (msg.data && msg.data.output) {
-          this._consoleLines.push(msg.data.output);
-        } else if (msg.token) {
-          this._consoleLines.push(`Token[${msg.deviceid || "?"}]: ${msg.token}`);
-          this._token = msg.token;
+        let payload = msg;
+        if (typeof msg.payload === "string") {
+          try {
+            payload = JSON.parse(msg.payload);
+          } catch (_) {
+            payload = { raw: msg.payload, topic: msg.topic };
+          }
+        } else if (msg.data && typeof msg.data === "object") {
+          payload = msg.data;
+        }
+
+        if (payload && payload.output) {
+          this._consoleLines.push(payload.output);
+        } else if (payload && payload.token) {
+          this._consoleLines.push(`Token[${payload.deviceid || payload.host || "?"}]: ${payload.token}`);
+          this._token = payload.token;
+        } else if (payload && (payload.type === 13 || payload.type === 14) && payload.host) {
+          this._consoleLines.push(`[URCON] Raw discovery: ${JSON.stringify(payload)}`);
         } else {
           this._consoleLines.push(evt.data.substring(0, 500));
         }
-        if (msg.host && (msg.type === 13 || msg.type === 14)) {
-          const name = msg.host;
+        if (payload && payload.host && (payload.type === 13 || payload.type === 14)) {
+          const name = payload.host;
           if (!this._neighbors.includes(name)) {
             this._neighbors.push(name);
-            this._consoleLines.push(`[URCON] Discovered neighbor: ${name} (${msg.ip || ""})`);
+            this._consoleLines.push(`[URCON] Discovered neighbor: ${name} (${payload.ip || ""})`);
           }
         }
       } catch(_) {
