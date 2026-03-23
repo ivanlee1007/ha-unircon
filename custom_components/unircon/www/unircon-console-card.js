@@ -389,6 +389,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const lines = this._consoleLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
+    const buildVersion = "1.0.25";
 
     this.innerHTML = `
     <style>
@@ -440,10 +441,10 @@ class UNiNUSConsoleCard extends HTMLElement {
       .msf .row label{font-size:13px;min-width:100px;color:var(--secondary-text-color,#666)}
       .msf .row input{height:26px;padding:3px 6px;font-size:13px;border:1px solid var(--divider-color,#ccc);border-radius:4px;flex:1}
     </style>
-    <ha-card header="${this._E(this.config.title||"UNiNUS Console")}">
+    <ha-card header="${this._E(`${this.config.title||"UNiNUS Console"} v${buildVersion}`)}">
       <div class="uh">
         <span style="font-size:13px">${this._E(sel||"未選擇")} · <span style="color:${connColor}">${connLabel}</span></span>
-        <span class="utag">unircon v2</span>
+        <span class="utag">build v${this._E(buildVersion)}</span>
       </div>
 
       <!-- Tabs -->
