@@ -84,6 +84,8 @@ broker:
 
 Card MQTT WebSocket 連線設定存在瀏覽器 localStorage，不影響 HA 後端。
 
+注意：HA integration 後端服務（例如 `collect_neighbors`、`send_command`）使用的是原生 MQTT/TCP，不是瀏覽器 WebSocket。UNiNUS 這套環境請優先設定 broker port 為 `1883`。若你要在卡片前端直接走 WebSocket，再另外填對應的 WS port/path。
+
 ## 自動化範例
 
 ```yaml

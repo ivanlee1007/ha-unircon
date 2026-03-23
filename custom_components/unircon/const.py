@@ -17,7 +17,7 @@ CONF_HOSTS = "hosts"
 CONF_SUBSCRIBE_TOPIC = "subscribe_topic"
 
 # Defaults
-DEFAULT_BROKER_PORT = 1884
+DEFAULT_BROKER_PORT = 1883
 DEFAULT_DOMAIN = "uninus"
 DEFAULT_SUBSCRIBE_TOPIC = "ha/pubrsp/#"
 

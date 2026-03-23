@@ -112,7 +112,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     config = entry.data
     broker_host = config[CONF_BROKER_HOST]
-    broker_port = int(config.get("broker_port", 1884))
+    broker_port = int(config.get("broker_port", 1883))
     username = config[CONF_USERNAME]
     password = config[CONF_PASSWORD]
     urcon_domain = config.get(CONF_DOMAIN, "uninus")
