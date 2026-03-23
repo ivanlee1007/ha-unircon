@@ -59,19 +59,25 @@ class UNiNUSConsoleCard extends HTMLElement {
       this._hass.connection.subscribeEvents((ev) => {
         const d = ev.data || {};
         const payload = d.data || {};
+        const eventType = payload.type ?? d.type;
+        const eventHost = payload.host || d.host;
+        const eventIp = payload.ip || d.ip || "";
+        const isDiscovery = d.kind === "urcon_discovery" || eventType === 13 || eventType === 14;
 
-        if ((payload.type === 13 || payload.type === 14 || d.type === 13 || d.type === 14) && (payload.host || d.host)) {
-          const name = payload.host || d.host;
-          if (!this._neighbors.includes(name)) {
-            this._neighbors.push(name);
+        if (isDiscovery && eventHost) {
+          if (!this._neighbors.includes(eventHost)) {
+            this._neighbors.push(eventHost);
           }
         }
 
-        const line = payload.output
-          ? payload.output
-          : ((payload.type === 13 || payload.type === 14) && (payload.host || d.host))
-            ? `[URCON] Discovered neighbor: ${payload.host || d.host} (${payload.ip || d.ip || ""})`
-            : JSON.stringify(d);
+        let line = payload.output || "";
+        if (!line && isDiscovery && eventHost) {
+          line = `[URCON] Discovered neighbor: ${eventHost} (${eventIp}) [src=${d.source || "event"}, type=${eventType}]`;
+        }
+        if (!line) {
+          line = JSON.stringify(d);
+        }
+
         this._consoleLines.push(line);
         if (this._consoleLines.length > 500) this._consoleLines.shift();
         this._render();
@@ -382,9 +388,10 @@ class UNiNUSConsoleCard extends HTMLElement {
     };
     this._debugRawWsUntil = Date.now() + 20000;
     this._wsFrameSeq = 0;
+    this._neighbors = [];
     this._hass.callService("unircon", "collect_neighbors", serviceData).catch(() => {});
     this._consoleLines.push(`--> Searching for UNiNUS neighbors... callback=${serviceData.callback_ip || "(auto)"}`);
-    this._consoleLines.push("[DEBUG] Raw WS capture enabled for 20s");
+    this._consoleLines.push("[INFO] Discovery display now follows backend MQTT events first; WS raw capture stays enabled for 20s as debug only");
     this._render();
   }
   _addNeighbor(host) {
@@ -405,7 +412,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     const lines = this._consoleLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.0.29";
+    const buildVersion = "1.0.30";
 
     this.innerHTML = `
     <style>

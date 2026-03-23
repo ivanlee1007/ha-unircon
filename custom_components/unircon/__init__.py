@@ -159,6 +159,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     hass.bus.async_fire(
                         f"{DOMAIN}_console",
                         {
+                            "kind": "urcon_discovery",
+                            "source": "backend_mqtt",
                             "host": data.get("host"),
                             "ip": data.get("ip"),
                             "type": data.get("type"),
@@ -166,6 +168,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             "data": data,
                         },
                     )
+                    if data.get("type") == 14 and data.get("host"):
+                        hass.bus.async_fire(
+                            f"{DOMAIN}_console",
+                            {
+                                "topic": topic,
+                                "data": {
+                                    "output": f"[MQTT-RX] {topic} {payload[:300]}"
+                                },
+                            },
+                        )
                     return
                 hass.bus.async_fire(
                     f"{DOMAIN}_console",
