@@ -55,9 +55,10 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         client = mqtt.Client(
                             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
                             client_id="ha-unircon-setup",
+                            socket_timeout=10,
                         )
                     except (AttributeError, TypeError):
-                        # paho-mqtt 1.x - no callback_api_version parameter
+                        # paho-mqtt 1.x - no callback_api_version or socket_timeout
                         client = mqtt.Client(
                             client_id="ha-unircon-setup",
                         )
@@ -71,7 +72,7 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     broker_port = int(user_input.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT))
 
                     try:
-                        client.connect(broker_host, broker_port, timeout=10)
+                        client.connect(broker_host, broker_port)
                         client.disconnect()
                         return True, ""
                     except ConnectionRefusedError:
