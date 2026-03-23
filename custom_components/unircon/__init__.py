@@ -29,10 +29,24 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR, Platform.BUTTON, Platform.TEXT]
 
+CARD_URL = "/unircon-static/unircon-console-card.js"
+
 DATA_MQTT = "mqtt"
 DATA_HOSTS = "hosts"
 DATA_TOKENS = "tokens"
 DATA_CONSOLE_HISTORY = "console_history"
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the UNiNUS Remote Console component (domain level)."""
+    www_dir = os.path.join(os.path.dirname(__file__), "www")
+    if os.path.isdir(www_dir):
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig("/unircon-static", www_dir, cache_headers=True)]
+        )
+        frontend.add_extra_js_url(hass, CARD_URL)
+        _LOGGER.info("Registered unircon card at %s", CARD_URL)
+    return True
 
 
 def generate_deploy_config(params: dict) -> str:
@@ -94,17 +108,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     urcon_domain = config.get(CONF_DOMAIN, "uninus")
     hosts = config.get(CONF_HOSTS, [])
 
-    # Register static path for card (Phase 2+)
-    www_dir = os.path.join(os.path.dirname(__file__), "www")
-    if os.path.isdir(www_dir):
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig("/unircon-static", www_dir, cache_headers=True)]
-        )
-        # Register as frontend module for auto-loading
-        try:
-            frontend.add_extra_js_url(hass, "/unircon-static/unircon-console-card.js")
-        except Exception as err:
-            _LOGGER.debug("Frontend JS registration: %s", err)
+    # Card static path is now registered in async_setup (domain level)
 
     # Create MQTT client
     mqtt_client = UNiNUSMQTT(
