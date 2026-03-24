@@ -4,7 +4,7 @@ DOMAIN = "unircon"
 
 CARD_JS_FILENAME = "unircon-console-card.js"
 CARD_STATIC_URL = f"/{DOMAIN}_static/{CARD_JS_FILENAME}"
-CARD_RESOURCE_VERSION = "1.0.47"
+CARD_RESOURCE_VERSION = "1.1.0"
 CARD_RESOURCE_URL = f"{CARD_STATIC_URL}?v={CARD_RESOURCE_VERSION}"
 
 # Config keys
@@ -17,6 +17,10 @@ CONF_HOSTS = "hosts"
 CONF_SUBSCRIBE_TOPIC = "subscribe_topic"
 CONF_DISCOVERY_HOST_NAME = "discovery_host_name"
 CONF_CALLBACK_IP = "callback_ip"
+
+# Site manager (multi-broker persistence in config_entry.options)
+CONF_SITES = "sites"          # list[dict] - [{host, port, username, password, domain, discovery_host_name, callback_ip, name}]
+CONF_ACTIVE_SITE = "active_site"  # str - currently selected site name
 
 # Defaults
 DEFAULT_BROKER_PORT = 1883

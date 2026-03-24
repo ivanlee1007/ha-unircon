@@ -27,6 +27,8 @@ from .const import (
     CONF_USERNAME,
     DEFAULT_BROKER_PORT,
     DEFAULT_DISCOVERY_HOST_NAME,
+    CONF_SITES,
+    CONF_ACTIVE_SITE,
     DOMAIN,
 )
 from .mqtt_helper import UNiNUSMQTT
