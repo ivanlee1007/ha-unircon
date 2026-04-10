@@ -4,6 +4,8 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 
 目前定位：**EMOS / UNiNUS 設備運維中台（operations cockpit）**，不是完整 fleet/OTA backend 的替代品。
 
+架構基線補充：對於 **已經由 HA 原生 MQTT discovery 註冊的 EMOS 設備**，`ha-unircon` 後續應優先扮演 **operations overlay layer**，不要再重建一套平行 device mirror。詳見 `docs/ha-mqtt-overlay-strategy.md`。
+
 ## 功能
 
 - **Config Flow**：HA UI 一鍵設定 MQTT Broker + 設備清單（目前單一實例）
@@ -38,6 +40,10 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - 長期 config version store / rollback engine
 
 這些建議由外部 backend 承接，HA / `ha-unircon` 當前台與操作入口。
+
+## Design Notes
+
+- `docs/ha-mqtt-overlay-strategy.md`：HA 原生 MQTT 與 `ha-unircon` 的分層策略，避免重複造輪子
 
 ## 安裝
 
