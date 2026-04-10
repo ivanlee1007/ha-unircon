@@ -46,6 +46,61 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/ha-mqtt-overlay-strategy.md`：HA 原生 MQTT 與 `ha-unircon` 的分層策略，避免重複造輪子
 - `docs/emos-backup-versioning-architecture.md`：EMOS 備份落地到 HA 同機 FTP 後，如何接 snapshot / diff / Git 版本控制
 
+## 使用前預先需求
+
+### 必要
+
+1. **MQTT broker**
+   - `ha-unircon` 後端服務依賴 MQTT/TCP
+   - HA add-on 可用：**Mosquitto broker**（最直接）
+   - 若你已有外部 broker，也可直接填既有 broker
+
+2. **已知可連線的 EMOS / UNiNUS 裝置**
+   - 至少要能透過 MQTT / URCON / console topic 跟 HA 所在網段互通
+   - 若裝置已經用 HA 原生 MQTT discovery 註冊到 HA，`ha-unircon` 會更適合扮演 operations overlay
+
+### 建議
+
+1. **Terminal & SSH** 或 **Advanced SSH & Web Terminal**
+   - 方便查 log、看備份檔、手動驗證 deploy / backup 行為
+
+2. **Filebrowser**
+   - 方便直接檢查 backup landing files、snapshot archive、deploy 輸出
+
+3. **FTP server**（如果你要接 EMOS config backup）
+   - 建議把 EMOS FTP backup server 指到 HA 同機器
+   - 這樣 HA 主機可以成為 EMOS backup ingest point
+   - 但請注意：**FTP 本身不是版本控制**，只是收件箱
+
+### 如果你要先做「Git 簡版備份版控」
+
+建議 HA 同機至少具備以下能力：
+
+1. **MQTT broker**
+   - 給 `ha-unircon` 本體使用
+
+2. **FTP server**
+   - 接 EMOS backup 上傳
+
+3. **檔案存取工具**
+   - 例如 **Filebrowser** / Samba / SSH
+   - 用來檢查 `inbox/`, `latest/`, `archive/` 這些資料夾
+
+4. **可執行腳本/自動化的環境**
+   - 例如 **Terminal & SSH**、**Advanced SSH & Web Terminal**、**Node-RED**、**n8n**
+   - 用來做 watcher / snapshot copy / hash / Git commit
+
+### 關於資料儲存
+
+- **Git + 檔案 archive**：最適合先做簡版 config versioning
+- **MariaDB / MySQL**：適合之後再補 metadata / audit / workflow state
+- **InfluxDB**：適合 telemetry / RSSI / success-rate 等時間序列觀測，不適合當 config version store
+
+相關設計文件：
+
+- `docs/ha-mqtt-overlay-strategy.md`
+- `docs/emos-backup-versioning-architecture.md`
+
 ## 安裝
 
 ### HACS Custom Repository
