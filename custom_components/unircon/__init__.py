@@ -15,6 +15,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.util import dt as dt_util
 import voluptuous as vol
 
@@ -336,6 +337,118 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def _mark_health_check(host: str) -> None:
         state = _ensure_host_state(host)
         state["last_health_check_at"] = _now_iso()
+
+    def _normalize_lookup(value: str | None) -> str:
+        if not value:
+            return ""
+        return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+    def _device_registry_candidates(host: str, token: str | None) -> list[dict[str, Any]]:
+        device_registry = dr.async_get(hass)
+        entity_registry = er.async_get(hass)
+        state = _ensure_host_state(host)
+        host_norm = _normalize_lookup(host)
+        token_norm = _normalize_lookup(token)
+        model_norm = _normalize_lookup(state.get("device_model"))
+        firmware_version = state.get("firmware_version")
+
+        candidates: list[dict[str, Any]] = []
+        for device in device_registry.devices.values():
+            score = 0
+            reasons: list[str] = []
+            identifiers = sorted(
+                f"{key}:{value}" for key, value in (getattr(device, "identifiers", set()) or set())
+            )
+            identifier_values = [str(value) for _, value in (getattr(device, "identifiers", set()) or set())]
+            connection_values = [str(value) for _, value in (getattr(device, "connections", set()) or set())]
+            names = [
+                getattr(device, "name_by_user", None),
+                getattr(device, "name", None),
+                getattr(device, "default_name", None),
+            ]
+            normalized_names = {_normalize_lookup(name) for name in names if name}
+
+            mqtt_identifier = None
+            if token and token in identifier_values:
+                mqtt_identifier = token
+                score += 100
+                reasons.append("identifier matches token")
+            elif token and token in connection_values:
+                mqtt_identifier = token
+                score += 90
+                reasons.append("connection matches token")
+
+            if host_norm and host_norm in normalized_names:
+                score += 70
+                reasons.append("device name matches host")
+
+            device_model = getattr(device, "model", None)
+            if model_norm and _normalize_lookup(device_model) == model_norm:
+                score += 20
+                reasons.append("model matches runtime state")
+
+            if firmware_version and getattr(device, "sw_version", None) == firmware_version:
+                score += 10
+                reasons.append("firmware matches runtime state")
+
+            manufacturer = getattr(device, "manufacturer", None) or getattr(device, "default_manufacturer", None)
+            if manufacturer and "uninus" in manufacturer.lower():
+                score += 5
+                reasons.append("manufacturer is UNiNUS")
+
+            if score <= 0:
+                continue
+
+            entities = er.async_entries_for_device(
+                entity_registry,
+                device.id,
+                include_disabled_entities=True,
+            )
+            entity_ids = sorted(entry.entity_id for entry in entities)
+            entity_platforms = sorted({entry.platform for entry in entities if getattr(entry, "platform", None)})
+            entity_domains = sorted({entry.entity_id.split(".", 1)[0] for entry in entities})
+
+            if mqtt_identifier is None and token_norm:
+                for ident in identifier_values:
+                    if _normalize_lookup(ident) == token_norm:
+                        mqtt_identifier = ident
+                        break
+            if mqtt_identifier is None and identifier_values:
+                mqtt_identifier = identifier_values[0]
+
+            candidates.append(
+                {
+                    "score": score,
+                    "reasons": reasons,
+                    "host": host,
+                    "token": token,
+                    "ha_device_id": device.id,
+                    "device_name": getattr(device, "name_by_user", None) or getattr(device, "name", None),
+                    "manufacturer": manufacturer,
+                    "model": device_model,
+                    "sw_version": getattr(device, "sw_version", None),
+                    "mqtt_identifier": mqtt_identifier,
+                    "identifiers": identifiers,
+                    "entity_ids": entity_ids,
+                    "entity_domains": entity_domains,
+                    "entity_platforms": entity_platforms,
+                    "is_mqtt_device": "mqtt" in entity_platforms,
+                    "suggested_binding": {
+                        "host": host,
+                        "site": None,
+                        "ha_device_id": device.id,
+                        "mqtt_identifier": mqtt_identifier,
+                        "manufacturer": manufacturer,
+                        "model": device_model,
+                        "sw_version": getattr(device, "sw_version", None),
+                        "base_entities": entity_ids,
+                        "notes": "; ".join(reasons),
+                    },
+                }
+            )
+
+        candidates.sort(key=lambda item: (-item["score"], item["device_name"] or ""))
+        return candidates
 
     # Message handler
     def _handle_message_in_loop(topic: str, payload: str) -> None:
@@ -800,6 +913,53 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             details={"count": len(hosts_list)},
         )
 
+    async def handle_export_binding_candidates(call: ServiceCall) -> None:
+        hosts_list = call.data.get("hosts", []) or list(device_data[DATA_HOSTS])
+        binding_map: dict[str, Any] = {}
+        unresolved_hosts: list[dict[str, Any]] = []
+        candidates_by_host: dict[str, Any] = {}
+
+        for host in hosts_list:
+            state = dict(_ensure_host_state(host))
+            token = device_data[DATA_TOKENS].get(host) or state.get("token")
+            candidates = _device_registry_candidates(host, token)
+            candidates_by_host[host] = {
+                "token": token,
+                "runtime_state": state,
+                "candidates": candidates,
+            }
+
+            if token and candidates:
+                binding_map[token] = candidates[0]["suggested_binding"]
+            else:
+                unresolved_hosts.append(
+                    {
+                        "host": host,
+                        "token": token,
+                        "reason": "no token" if not token else "no registry candidate",
+                    }
+                )
+
+        hass.bus.async_fire(
+            f"{DOMAIN}_binding_candidates_exported",
+            {
+                "entry_id": entry.entry_id,
+                "hosts": hosts_list,
+                "binding_map": binding_map,
+                "unresolved_hosts": unresolved_hosts,
+                "candidates": candidates_by_host,
+            },
+        )
+        _append_audit(
+            "binding_candidates_export",
+            message=f"export binding candidates ({len(hosts_list)} hosts)",
+            details={
+                "count": len(hosts_list),
+                "resolved": len(binding_map),
+                "unresolved": len(unresolved_hosts),
+            },
+        )
+
     async def handle_generate_deploy(call: ServiceCall) -> None:
         """Generate deploy config and return as event."""
         config_text = generate_deploy_config(dict(call.data))
@@ -844,6 +1004,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, "batch_command", handle_batch_command)
         hass.services.async_register(DOMAIN, "run_health_check", handle_run_health_check)
         hass.services.async_register(DOMAIN, "export_inventory", handle_export_inventory)
+        hass.services.async_register(DOMAIN, "export_binding_candidates", handle_export_binding_candidates)
         hass.services.async_register(DOMAIN, "generate_deploy", handle_generate_deploy)
         hass.services.async_register(DOMAIN, "add_device", handle_add_device)
 
@@ -877,6 +1038,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "batch_command",
             "run_health_check",
             "export_inventory",
+            "export_binding_candidates",
             "generate_deploy",
             "add_device",
         ]:

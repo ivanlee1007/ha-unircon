@@ -166,6 +166,13 @@ bash tools/run_emos_backup_scan.sh
 
 binding map 只是目前最務實的橋接層。
 
+若不想手刻，可先用：
+
+- `docs/ha-binding-candidate-exporter.md`
+- `unircon.export_binding_candidates`
+
+先從 HA registry 吐出候選，再人工確認。
+
 ---
 
 ## 下一步

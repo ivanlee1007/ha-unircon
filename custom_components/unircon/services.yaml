@@ -320,6 +320,17 @@ export_inventory:
       selector:
         object:
 
+export_binding_candidates:
+  name: Export binding candidates
+  description: Inspect HA device and entity registry and emit suggested binding-map candidates.
+  fields:
+    hosts:
+      name: Hosts
+      description: Optional list of hostnames. If omitted, inspects all configured hosts.
+      required: false
+      selector:
+        object:
+
 generate_deploy:
   name: Generate deploy config
   description: Generate device deployment configuration text.

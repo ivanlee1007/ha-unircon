@@ -49,6 +49,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/git-backup-worker.md`：starter worker 的 CLI 用法與目前能力邊界
 - `docs/git-backup-automation.md`：在 HA 主機上用 shell / cron / Node-RED / n8n 跑 worker 的建議做法
 - `docs/git-backup-binding-map.md`：把 serial 正式對到 host / HA device / base entities 的 binding map 規格
+- `docs/ha-binding-candidate-exporter.md`：從 HA registry 匯出 binding candidate，減少手刻 binding map
 
 ## 使用前預先需求
 
@@ -108,6 +109,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/git-backup-worker.md`
 - `docs/git-backup-automation.md`
 - `docs/git-backup-binding-map.md`
+- `docs/ha-binding-candidate-exporter.md`
 
 ### 內建 starter worker
 
@@ -187,8 +189,27 @@ npm run backup:run
 | `unircon.approve_operation` | 暫時核准某台設備的高風險命令 |
 | `unircon.run_health_check` | 對指定設備做 token/version/clock/result 健康檢查 |
 | `unircon.export_inventory` | 匯出目前 inventory / runtime summary（event） |
+| `unircon.export_binding_candidates` | 從 HA device/entity registry 匯出 binding-map 候選（event） |
 | `unircon.generate_deploy` | 生成設備部署檔（結果透過 event 傳回） |
 | `unircon.add_device` | 動態新增一台設備到整合中 |
+
+### Binding candidate exporter 範例
+
+先讓 integration 拿到 token / runtime state 後，可直接對 HA registry 盤一輪：
+
+```yaml
+service: unircon.export_binding_candidates
+data:
+  hosts:
+    - Relay-685D
+```
+
+會 fire event：`unircon_binding_candidates_exported`
+
+事件內含：
+- `binding_map`：第一順位建議綁定
+- `unresolved_hosts`：還缺 token 或找不到候選的 host
+- `candidates`：完整候選清單與比對理由
 
 ## Policy Gate
 
