@@ -50,6 +50,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/git-backup-automation.md`：在 HA 主機上用 shell / cron / Node-RED / n8n 跑 worker 的建議做法
 - `docs/git-backup-binding-map.md`：把 serial 正式對到 host / HA device / base entities 的 binding map 規格
 - `docs/ha-binding-candidate-exporter.md`：從 HA registry 匯出 binding candidate，減少手刻 binding map
+- `docs/ha-binding-backup-pipeline.md`：把 `save_binding_map` 和 backup worker 串成單條可排程流程
 
 ## 使用前預先需求
 
@@ -110,12 +111,17 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/git-backup-automation.md`
 - `docs/git-backup-binding-map.md`
 - `docs/ha-binding-candidate-exporter.md`
+- `docs/ha-binding-backup-pipeline.md`
 
 ### 內建 starter worker
 
 repo 目前已提供一個 Git 簡版備份 worker：
 
 - `tools/emos_backup_worker.mjs`
+
+以及一條直接把 HA binding map 串進 worker 的 pipeline runner：
+
+- `tools/run_binding_backup_pipeline.mjs`
 
 可用來掃描 FTP landing inbox，建立 archive / metadata / diff / Git commit。
 
@@ -133,6 +139,12 @@ npm run backup:scan -- --root /share/emostore --commit
 
 ```bash
 npm run backup:run
+```
+
+若要先由 HA service 更新 binding map，再把同一路徑直接餵給 worker：
+
+```bash
+npm run backup:pipeline
 ```
 
 更多實際排程方式見：`docs/git-backup-automation.md`

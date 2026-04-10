@@ -5,7 +5,8 @@
   "scripts": {
     "probe:discovery": "node tools/observe_discovery.mjs",
     "backup:scan": "node tools/emos_backup_worker.mjs",
-    "backup:run": "bash tools/run_emos_backup_scan.sh"
+    "backup:run": "bash tools/run_emos_backup_scan.sh",
+    "backup:pipeline": "node tools/run_binding_backup_pipeline.mjs"
   },
   "dependencies": {
     "mqtt": "^5.15.0"

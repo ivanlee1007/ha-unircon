@@ -7,6 +7,7 @@ Last updated: 2026-04-10
 如果你要的是「可直接排程的入口」，搭配：
 
 - `tools/run_emos_backup_scan.sh`
+- `tools/run_binding_backup_pipeline.mjs`
 
 定位很明確：
 

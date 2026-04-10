@@ -35,6 +35,7 @@ Last updated: 2026-04-10
 repo 內建：
 
 - `tools/run_emos_backup_scan.sh`
+- `tools/run_binding_backup_pipeline.mjs`
 
 功能：
 
@@ -50,6 +51,7 @@ repo 內建：
 參考：
 
 - `tools/examples/emos-backup.env.example`
+- `tools/examples/ha-binding-backup.env.example`
 
 最小可用例：
 
@@ -71,6 +73,14 @@ bash tools/run_emos_backup_scan.sh
 ```bash
 export EMOS_BACKUP_BINDING_MAP=/config/ha-unircon/binding-map.json
 bash tools/run_emos_backup_scan.sh
+```
+
+如果你要讓 HA 先自己存出最新 binding map，再立刻接 worker：
+
+```bash
+export HA_URL=http://homeassistant.local:8123
+export HA_TOKEN=YOUR_TOKEN
+node tools/run_binding_backup_pipeline.mjs --repo-root /config/ha-unircon
 ```
 
 若要自動 push：
