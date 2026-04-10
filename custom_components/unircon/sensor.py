@@ -13,6 +13,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    DATA_APPROVALS,
     DATA_AUDIT_LOG,
     DATA_CONSOLE_HISTORY,
     DATA_HOST_STATE,
@@ -70,6 +71,7 @@ class UNiNUSFleetSummarySensor(SensorEntity):
         data = self._hass.data[DOMAIN][self._entry.entry_id]
         hosts = data.get("hosts", [])
         state_map = data.get(DATA_HOST_STATE, {})
+        approvals = data.get(DATA_APPROVALS, {})
         now = dt_util.utcnow()
         online = 0
         healthy_hosts: list[str] = []
@@ -107,6 +109,8 @@ class UNiNUSFleetSummarySensor(SensorEntity):
             "stale_hosts": stale_hosts,
             "offline_hosts": offline_hosts,
             "firmware_versions": firmware_versions,
+            "pending_approvals": list(approvals.values()),
+            "pending_approval_count": len(approvals),
         }
 
 
@@ -141,6 +145,7 @@ class UNiNUSAuditLogSensor(SensorEntity):
             "latest": latest,
             "entries": entries[-20:],
             "count": len(entries),
+            "pending_approvals": list(data.get(DATA_APPROVALS, {}).values()),
         }
 
 

@@ -12,6 +12,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - **Fleet Summary Sensor**：整體設備 online / stale / offline 摘要
 - **Audit Log Sensor**：整合層服務操作與盤點輸出紀錄
 - **Last Seen / Firmware Sensors**：每台設備最後回報時間、已知韌體版本
+- **Dangerous Command Policy Gate**：對 `write erase` / `config restore` / `reload` / `copy ...` 等高風險命令做攔截與暫時核准
 - **Token Text**：設備序號顯示與手動設定
 - **Command Buttons**：Enable / Show Version / URCON Neighbors / Backup 等快按
 - **Services**：下指令、批次處理、MQTT 測試發佈、鄰居探索、健康檢查、inventory 匯出、部署檔生成、動態新增設備
@@ -87,10 +88,63 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 | `unircon.request_token` | 要求設備序號 |
 | `unircon.mqtt_publish` | MQTT 測試發佈 |
 | `unircon.collect_neighbors` | URCOM 鄰居探索 |
+| `unircon.approve_operation` | 暫時核准某台設備的高風險命令 |
 | `unircon.run_health_check` | 對指定設備做 token/version/clock/result 健康檢查 |
 | `unircon.export_inventory` | 匯出目前 inventory / runtime summary（event） |
 | `unircon.generate_deploy` | 生成設備部署檔（結果透過 event 傳回） |
 | `unircon.add_device` | 動態新增一台設備到整合中 |
+
+## Policy Gate
+
+目前 integration 會把下列命令族視為高風險：
+- `write erase*`
+- `write default`
+- `config restore*`
+- `restore factory`
+- `reload` / `reboot`
+- `copy ...`
+- `exec autodeploy`
+
+預設行為：
+- 一般 `send_command` / `batch_command` 遇到這些命令時會先擋下
+- 需要用 `confirm: true` 明確放行，或先呼叫 `unircon.approve_operation`
+- 所有放行 / 擋下行為都會寫進 audit log
+
+### 危險操作放行範例
+
+```yaml
+service: unircon.approve_operation
+data:
+  host: sensor01
+  command: write erase all force
+  ttl_seconds: 180
+  note: 現場維修更換前清機
+```
+
+接著在核准時效內再送命令：
+
+```yaml
+service: unircon.send_command
+data:
+  host: sensor01
+  command: write erase all force
+```
+
+或直接單次明確放行：
+
+```yaml
+service: unircon.send_command
+data:
+  host: sensor01
+  command: reload
+  confirm: true
+```
+
+### Integration 設定
+
+在 HA 整合的 **Configure / Options** 可調：
+- 是否啟用 dangerous-command policy gate
+- 暫時核准視窗秒數（approval window）
 
 ## Dashboard Card
 
@@ -188,6 +242,21 @@ automation:
         data:
           name: "UNiNUS Inventory"
           message: "已匯出 {{ trigger.event.data.inventory | count }} 台設備摘要"
+
+# 高風險操作先核准再下發
+  - alias: unircon_safe_reload_sensor01
+    trigger: []
+    action:
+      - service: unircon.approve_operation
+        data:
+          host: sensor01
+          command: reload
+          ttl_seconds: 120
+          note: 排程維護
+      - service: unircon.send_command
+        data:
+          host: sensor01
+          command: reload
 ```
 
 ## 相關

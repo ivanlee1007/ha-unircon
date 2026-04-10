@@ -76,7 +76,7 @@ class UNiNUSCommandButton(ButtonEntity):
 
         data = self._hass.data[DOMAIN][self._entry.entry_id]
         token = data.get(DATA_TOKENS, {}).get(self._host, "00000000")
-        config = self._entry.data
+        config = {**self._entry.data, **self._entry.options}
 
         # Build command from template
         cmd = self._command_template.format(

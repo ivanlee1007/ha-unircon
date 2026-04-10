@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import json
 import logging
 import os
@@ -20,8 +21,10 @@ import voluptuous as vol
 from .const import (
     CARD_RESOURCE_URL,
     CARD_STATIC_URL,
+    CONF_APPROVAL_WINDOW_SECONDS,
     DATA_AUDIT_LOG,
     DATA_HOST_STATE,
+    DATA_APPROVALS,
     CONF_BROKER_HOST,
     CONF_BROKER_PORT,
     CONF_CALLBACK_IP,
@@ -29,9 +32,12 @@ from .const import (
     CONF_DOMAIN,
     CONF_HOSTS,
     CONF_PASSWORD,
+    CONF_REQUIRE_CONFIRM_DANGEROUS,
     CONF_USERNAME,
+    DEFAULT_APPROVAL_WINDOW_SECONDS,
     DEFAULT_BROKER_PORT,
     DEFAULT_DISCOVERY_HOST_NAME,
+    DEFAULT_REQUIRE_CONFIRM_DANGEROUS,
     DOMAIN,
     HEALTH_STALE_SECONDS,
     MAX_AUDIT_LOG,
@@ -120,8 +126,9 @@ def generate_deploy_config(params: dict) -> str:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up UNiNUS from a config entry."""
     hass.data.setdefault(DOMAIN, {})
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
-    config = entry.data
+    config = {**entry.data, **entry.options}
     broker_host = config[CONF_BROKER_HOST]
     broker_port = int(config.get(CONF_BROKER_PORT, DEFAULT_BROKER_PORT))
     username = config[CONF_USERNAME]
@@ -152,6 +159,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DATA_CONSOLE_HISTORY: {h: [] for h in hosts},
         DATA_HOST_STATE: {},
         DATA_AUDIT_LOG: [],
+        DATA_APPROVALS: {},
     }
     hass.data[DOMAIN][entry.entry_id] = device_data
 
@@ -179,6 +187,89 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     for host in hosts:
         _ensure_host_state(host)
+
+    def _require_confirm_dangerous() -> bool:
+        return bool(
+            entry.options.get(
+                CONF_REQUIRE_CONFIRM_DANGEROUS,
+                entry.data.get(
+                    CONF_REQUIRE_CONFIRM_DANGEROUS,
+                    DEFAULT_REQUIRE_CONFIRM_DANGEROUS,
+                ),
+            )
+        )
+
+    def _approval_window_seconds() -> int:
+        return int(
+            entry.options.get(
+                CONF_APPROVAL_WINDOW_SECONDS,
+                entry.data.get(
+                    CONF_APPROVAL_WINDOW_SECONDS,
+                    DEFAULT_APPROVAL_WINDOW_SECONDS,
+                ),
+            )
+        )
+
+    def _classify_command(command: str) -> str | None:
+        normalized = " ".join(command.lower().strip().split())
+        dangerous_patterns = [
+            "write erase",
+            "write erase all",
+            "write erase force",
+            "write default",
+            "config restore",
+            "restore factory",
+            "reload",
+            "reboot",
+            "copy ",
+            "exec autodeploy",
+        ]
+        for pattern in dangerous_patterns:
+            if normalized.startswith(pattern):
+                return pattern
+        return None
+
+    def _approval_key(host: str, command: str) -> str:
+        return f"{host}::{command.strip().lower()}"
+
+    def _has_active_approval(host: str, command: str) -> bool:
+        approvals = device_data.setdefault(DATA_APPROVALS, {})
+        key = _approval_key(host, command)
+        info = approvals.get(key)
+        if not info:
+            return False
+        expires_at = info.get("expires_at")
+        try:
+            expires_dt = dt_util.parse_datetime(expires_at) if expires_at else None
+        except Exception:
+            expires_dt = None
+        if expires_dt is None or expires_dt <= dt_util.utcnow():
+            approvals.pop(key, None)
+            return False
+        return True
+
+    def _grant_approval(host: str, command: str, *, ttl_seconds: int, note: str | None = None) -> dict[str, Any]:
+        expires_dt = dt_util.utcnow() + timedelta(seconds=ttl_seconds)
+        approval = {
+            "host": host,
+            "command": command,
+            "expires_at": expires_dt.isoformat(),
+            "note": note or "",
+        }
+        device_data.setdefault(DATA_APPROVALS, {})[_approval_key(host, command)] = approval
+        return approval
+
+    def _policy_allows_command(host: str, command: str, call_data: dict[str, Any]) -> tuple[bool, str | None]:
+        if not _require_confirm_dangerous():
+            return True, None
+        danger = _classify_command(command)
+        if not danger:
+            return True, None
+        if bool(call_data.get("confirm", False)):
+            return True, f"confirm flag for {danger}"
+        if _has_active_approval(host, command):
+            return True, f"active approval for {danger}"
+        return False, danger
 
     def _append_audit(
         kind: str,
@@ -416,6 +507,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if not token:
             token = device_data[DATA_TOKENS].get(host, "00000000")
 
+        allowed, reason = _policy_allows_command(host, command, dict(call.data))
+        if not allowed:
+            _append_audit(
+                "policy_blocked",
+                host=host,
+                status="blocked",
+                message=f"blocked dangerous command: {command}",
+                details={"command": command, "matched_rule": reason},
+            )
+            hass.bus.async_fire(
+                f"{DOMAIN}_policy_blocked",
+                {"host": host, "command": command, "matched_rule": reason},
+            )
+            _fire_console_output(
+                f"[POLICY] Blocked dangerous command for {host}: {command}. Use confirm=true or approve_operation first.",
+                "service/send_command",
+            )
+            return
+
         switched, old_vals = await _switch_broker_if_needed(call.data)
         ok, err_text = await _ensure_backend_mqtt_connected("send_command")
         if not ok:
@@ -431,6 +541,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         await hass.async_add_executor_job(_send)
         _mark_host_command(host, command)
+        if reason:
+            _append_audit(
+                "policy_allow",
+                host=host,
+                message=f"allowed dangerous command: {command}",
+                details={"command": command, "reason": reason},
+            )
+
+    async def handle_approve_operation(call: ServiceCall) -> None:
+        host = str(call.data.get("host", "")).strip()
+        command = str(call.data.get("command", "")).strip()
+        if not host or not command:
+            return
+        ttl_seconds = int(call.data.get("ttl_seconds", _approval_window_seconds()))
+        note = str(call.data.get("note", "")).strip() or None
+        approval = _grant_approval(host, command, ttl_seconds=ttl_seconds, note=note)
+        _append_audit(
+            "approval_granted",
+            host=host,
+            message=f"approval granted for {command}",
+            details=approval,
+        )
+        _fire_console_output(
+            f"[POLICY] Approved dangerous command for {host} until {approval['expires_at']}: {command}",
+            "service/approve_operation",
+        )
 
     async def handle_request_token(call: ServiceCall) -> None:
         host = call.data.get("host", "")
@@ -571,11 +707,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _mark_health_check(host)
             token = device_data[DATA_TOKENS].get(host, "00000000")
             for cmd in commands:
+                allowed, reason = _policy_allows_command(host, cmd, dict(call.data))
+                if not allowed:
+                    _append_audit(
+                        "policy_blocked",
+                        host=host,
+                        status="blocked",
+                        message=f"blocked dangerous batch command: {cmd}",
+                        details={"command": cmd, "matched_rule": reason},
+                    )
+                    _fire_console_output(
+                        f"[POLICY] Skipped dangerous batch command for {host}: {cmd}",
+                        "service/batch_command",
+                    )
+                    continue
+
                 def _send_batch(h=host, t=token, c=cmd) -> None:
                     mqtt_client.send_command(h, t, c)
 
                 await hass.async_add_executor_job(_send_batch)
                 _mark_host_command(host, cmd, kind="batch_command")
+                if reason:
+                    _append_audit(
+                        "policy_allow",
+                        host=host,
+                        message=f"allowed dangerous batch command: {cmd}",
+                        details={"command": cmd, "reason": reason},
+                    )
                 await asyncio.sleep(delay)
 
     async def handle_run_health_check(call: ServiceCall) -> None:
@@ -675,11 +833,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _append_audit("add_device", host=new_host, message=f"added device {new_host}")
         _LOGGER.info("Added new device: %s", new_host)
 
-        # Reload platforms to create persistent entities for new device.
-        await hass.config_entries.async_reload(entry.entry_id)
+        # Entry update listener will reload the integration.
 
     if not hass.services.has_service(DOMAIN, "send_command"):
         hass.services.async_register(DOMAIN, "send_command", handle_send_command)
+        hass.services.async_register(DOMAIN, "approve_operation", handle_approve_operation)
         hass.services.async_register(DOMAIN, "request_token", handle_request_token)
         hass.services.async_register(DOMAIN, "mqtt_publish", handle_mqtt_publish)
         hass.services.async_register(DOMAIN, "collect_neighbors", handle_collect_neighbors)
@@ -712,6 +870,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not remaining_entry_data:
         for svc in [
             "send_command",
+            "approve_operation",
             "request_token",
             "mqtt_publish",
             "collect_neighbors",
@@ -725,3 +884,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass.services.async_remove(DOMAIN, svc)
 
     return unload_ok
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the integration when config-entry data/options change."""
+    await hass.config_entries.async_reload(entry.entry_id)

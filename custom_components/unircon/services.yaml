@@ -22,6 +22,12 @@ send_command:
       required: false
       selector:
         text:
+    confirm:
+      name: Confirm dangerous command
+      description: Bypass dangerous-command policy gate for this call.
+      required: false
+      selector:
+        boolean:
     broker_host:
       name: Broker host
       description: MQTT broker hostname/IP (optional, uses backend config if empty).
@@ -45,6 +51,39 @@ send_command:
     broker_password:
       name: Broker password
       description: MQTT broker password.
+      required: false
+      selector:
+        text:
+
+approve_operation:
+  name: Approve dangerous operation
+  description: Grant a temporary approval window for a dangerous command on a target device.
+  fields:
+    host:
+      name: Host
+      description: Target device hostname.
+      required: true
+      selector:
+        text:
+    command:
+      name: Command
+      description: Exact command string that should be allowed temporarily.
+      required: true
+      selector:
+        text:
+    ttl_seconds:
+      name: Approval window
+      description: How many seconds the temporary approval remains valid.
+      required: false
+      default: 180
+      selector:
+        number:
+          min: 30
+          max: 3600
+          unit_of_measurement: seconds
+    note:
+      name: Note
+      description: Optional audit note for why this approval was granted.
       required: false
       selector:
         text:
@@ -125,6 +164,12 @@ batch_command:
           min: 0
           max: 30
           unit_of_measurement: seconds
+    confirm:
+      name: Confirm dangerous commands
+      description: Allow dangerous commands in this batch without a separate approval window.
+      required: false
+      selector:
+        boolean:
 
     broker_host:
       name: Broker host

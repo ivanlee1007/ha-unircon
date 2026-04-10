@@ -8,8 +8,10 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.core import callback
 
 from .const import (
+    CONF_APPROVAL_WINDOW_SECONDS,
     CONF_BROKER_HOST,
     CONF_BROKER_PORT,
     CONF_CALLBACK_IP,
@@ -17,11 +19,14 @@ from .const import (
     CONF_DOMAIN,
     CONF_HOSTS,
     CONF_PASSWORD,
+    CONF_REQUIRE_CONFIRM_DANGEROUS,
     CONF_SUBSCRIBE_TOPIC,
     CONF_USERNAME,
+    DEFAULT_APPROVAL_WINDOW_SECONDS,
     DEFAULT_BROKER_PORT,
     DEFAULT_DISCOVERY_HOST_NAME,
     DEFAULT_DOMAIN,
+    DEFAULT_REQUIRE_CONFIRM_DANGEROUS,
     DEFAULT_SUBSCRIBE_TOPIC,
     DOMAIN,
 )
@@ -34,6 +39,13 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for UNiNUS Remote Console."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        return UNiNUSOptionsFlow()
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -126,6 +138,8 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     **self._broker_config,
                     CONF_HOSTS: hosts,
                     CONF_SUBSCRIBE_TOPIC: DEFAULT_SUBSCRIBE_TOPIC,
+                    CONF_REQUIRE_CONFIRM_DANGEROUS: DEFAULT_REQUIRE_CONFIRM_DANGEROUS,
+                    CONF_APPROVAL_WINDOW_SECONDS: DEFAULT_APPROVAL_WINDOW_SECONDS,
                 },
             )
 
@@ -169,6 +183,61 @@ class UNiNUSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_USERNAME): str,
                     vol.Required(CONF_PASSWORD): str,
+                }
+            ),
+            errors=errors,
+        )
+
+
+class UNiNUSOptionsFlow(config_entries.OptionsFlow):
+    """Options flow for UNiNUS Remote Console."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            approval_window = int(user_input.get(CONF_APPROVAL_WINDOW_SECONDS, DEFAULT_APPROVAL_WINDOW_SECONDS))
+            if approval_window < 30:
+                errors[CONF_APPROVAL_WINDOW_SECONDS] = "invalid_approval_window"
+            else:
+                return self.async_create_entry(
+                    title="",
+                    data={
+                        CONF_REQUIRE_CONFIRM_DANGEROUS: bool(
+                            user_input.get(
+                                CONF_REQUIRE_CONFIRM_DANGEROUS,
+                                DEFAULT_REQUIRE_CONFIRM_DANGEROUS,
+                            )
+                        ),
+                        CONF_APPROVAL_WINDOW_SECONDS: approval_window,
+                    },
+                )
+
+        options = self.config_entry.options
+        data = self.config_entry.data
+        require_confirm = options.get(
+            CONF_REQUIRE_CONFIRM_DANGEROUS,
+            data.get(CONF_REQUIRE_CONFIRM_DANGEROUS, DEFAULT_REQUIRE_CONFIRM_DANGEROUS),
+        )
+        approval_window = options.get(
+            CONF_APPROVAL_WINDOW_SECONDS,
+            data.get(CONF_APPROVAL_WINDOW_SECONDS, DEFAULT_APPROVAL_WINDOW_SECONDS),
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_REQUIRE_CONFIRM_DANGEROUS,
+                        default=bool(require_confirm),
+                    ): bool,
+                    vol.Required(
+                        CONF_APPROVAL_WINDOW_SECONDS,
+                        default=int(approval_window),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=30, max=3600)),
                 }
             ),
             errors=errors,
