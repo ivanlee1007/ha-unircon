@@ -66,6 +66,13 @@ export EMOS_BACKUP_HOST_MAP=/config/ha-unircon/host-map.json
 bash tools/run_emos_backup_scan.sh
 ```
 
+更建議直接用 binding map：
+
+```bash
+export EMOS_BACKUP_BINDING_MAP=/config/ha-unircon/binding-map.json
+bash tools/run_emos_backup_scan.sh
+```
+
 若要自動 push：
 
 ```bash
@@ -94,7 +101,7 @@ bash tools/run_emos_backup_scan.sh
 ```text
 /config/ha-unircon/
   .env.backup
-  host-map.json
+  binding-map.json
   logs/
 ```
 
@@ -181,21 +188,27 @@ cd /config/ha-unircon && . ./.env.backup && bash tools/run_emos_backup_scan.sh
 
 若要讓 metadata 好看一些，可以提供：
 
-- `tools/examples/host-map.sample.json`
+- `tools/examples/binding-map.sample.json`
 
 例如：
 
 ```json
 {
-  "7432284": "Relay-685D"
+  "7432284": {
+    "host": "Relay-685D",
+    "ha_device_id": "mqtt_7432284_device_id",
+    "base_entities": [
+      "device_tracker.relay_685d_relay_685d_state"
+    ]
+  }
 }
 ```
 
 未來這份 mapping 可以再升級成：
 
 - serial -> host
-- host -> HA device_id
-- host -> entity ids
+- serial -> HA device_id
+- serial -> entity ids
 
 但第一版先不要做太重。
 

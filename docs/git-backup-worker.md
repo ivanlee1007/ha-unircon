@@ -34,6 +34,7 @@ Last updated: 2026-04-10
 4. 維護 `runtime/worker-state.json`
    - 避免同一份 inbox 檔在下一輪掃描被重複吃進去
 5. 可選擇自動 Git commit
+6. 可讀 binding map，把 serial 對到 host / HA device / base entities
 
 ---
 
@@ -95,7 +96,9 @@ node tools/emos_backup_worker.mjs --root /share/emostore --dry-run
 - `--repo <path>`
   - Git repo root, 預設是 `<root>/repo`
 - `--host-map <path>`
-  - JSON 檔，提供 serial -> host 對應
+  - 舊格式相容參數，JSON 檔提供 serial -> host 對應
+- `--binding-map <path>`
+  - 新格式 binding map，提供 serial -> host / HA device / base entities 對應
 - `--commit`
   - 掃描後自動 Git commit
 - `--dry-run`
@@ -103,7 +106,14 @@ node tools/emos_backup_worker.mjs --root /share/emostore --dry-run
 
 ---
 
-## host-map 範例
+## binding map
+
+推薦看：
+
+- `docs/git-backup-binding-map.md`
+- `tools/examples/binding-map.sample.json`
+
+最簡版仍可用舊格式：
 
 ```json
 {
@@ -112,7 +122,15 @@ node tools/emos_backup_worker.mjs --root /share/emostore --dry-run
 }
 ```
 
-這樣 metadata 和 diff summary 內就會帶 host 名稱。
+若用新格式，metadata 會多帶：
+
+- `site`
+- `ha_device_id`
+- `mqtt_identifier`
+- `base_entities`
+- `device_identity`
+
+這樣後面做 HA overlay 才接得起來。
 
 ---
 

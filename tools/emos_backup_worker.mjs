@@ -67,6 +67,63 @@ function loadJsonIfExists(filePath) {
   }
 }
 
+function normalizeString(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function normalizeStringList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => normalizeString(item)).filter(Boolean);
+}
+
+function resolveBindingRecord(serial, bindingMap) {
+  const rawEntry = bindingMap?.[serial];
+  const fallback = {
+    serial,
+    host: null,
+    site: null,
+    ha_device_id: null,
+    mqtt_identifier: serial,
+    base_entities: [],
+    manufacturer: null,
+    model: null,
+    sw_version: null,
+    notes: null,
+    matched_on: null,
+  };
+
+  if (!rawEntry) return fallback;
+
+  if (typeof rawEntry === 'string') {
+    return {
+      ...fallback,
+      host: normalizeString(rawEntry),
+      matched_on: 'serial',
+    };
+  }
+
+  if (typeof rawEntry !== 'object' || Array.isArray(rawEntry)) {
+    return fallback;
+  }
+
+  return {
+    serial: normalizeString(rawEntry.serial) || serial,
+    host: normalizeString(rawEntry.host) || normalizeString(rawEntry.hostname),
+    site: normalizeString(rawEntry.site),
+    ha_device_id: normalizeString(rawEntry.ha_device_id),
+    mqtt_identifier:
+      normalizeString(rawEntry.mqtt_identifier)
+      || normalizeString(rawEntry.device_identifier)
+      || serial,
+    base_entities: normalizeStringList(rawEntry.base_entities || rawEntry.entities),
+    manufacturer: normalizeString(rawEntry.manufacturer),
+    model: normalizeString(rawEntry.model),
+    sw_version: normalizeString(rawEntry.sw_version) || normalizeString(rawEntry.firmware),
+    notes: normalizeString(rawEntry.notes),
+    matched_on: 'serial',
+  };
+}
+
 function saveJson(filePath, value) {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2) + '\n', 'utf8');
 }
@@ -136,11 +193,15 @@ function classifyChange(previousNormalized, currentNormalized, previousSha, curr
   return 'unknown_changed';
 }
 
-function buildDiffSummary({ serial, host, previousNormPath, currentNormPath, previousSha, currentSha, changeType, changed }) {
+function buildDiffSummary({ serial, binding, previousNormPath, currentNormPath, previousSha, currentSha, changeType, changed }) {
   const header = [
     `# Diff Summary for ${serial}`,
     '',
-    `- host: ${host || 'unknown'}`,
+    `- host: ${binding.host || 'unknown'}`,
+    `- site: ${binding.site || 'unknown'}`,
+    `- ha_device_id: ${binding.ha_device_id || 'unbound'}`,
+    `- mqtt_identifier: ${binding.mqtt_identifier || 'unknown'}`,
+    `- base_entity_count: ${binding.base_entities.length}`,
     `- changed: ${changed}`,
     `- change_type: ${changeType}`,
     `- previous_sha256: ${previousSha || 'none'}`,
@@ -190,13 +251,17 @@ function main() {
   const diffsRoot = path.join(repoRoot, 'diffs');
   const runtimeRoot = path.join(root, 'runtime');
   const statePath = path.join(runtimeRoot, 'worker-state.json');
-  const hostMapPath = args['host-map'] || process.env.EMOS_BACKUP_HOST_MAP || '';
+  const bindingMapPath = args['binding-map']
+    || process.env.EMOS_BACKUP_BINDING_MAP
+    || args['host-map']
+    || process.env.EMOS_BACKUP_HOST_MAP
+    || '';
   const doCommit = Boolean(args.commit || process.env.EMOS_BACKUP_COMMIT === '1');
   const dryRun = Boolean(args['dry-run']);
 
   [root, repoRoot, inboxDir, latestDir, archiveRoot, metadataRoot, normalizedRoot, diffsRoot, runtimeRoot].forEach(ensureDir);
 
-  const hostMap = hostMapPath ? loadJsonIfExists(path.resolve(hostMapPath)) || {} : {};
+  const bindingMap = bindingMapPath ? loadJsonIfExists(path.resolve(bindingMapPath)) || {} : {};
   const state = loadJsonIfExists(statePath) || { serials: {} };
   const files = fs.readdirSync(inboxDir)
     .filter((name) => name.endsWith('.txt'))
@@ -223,7 +288,8 @@ function main() {
     const normalized = normalizeContent(rawContent);
     const iso = nowIsoWithOffset();
     const timestamp = toFileSafeTimestamp(iso);
-    const host = hostMap[serial] || null;
+    const binding = resolveBindingRecord(serial, bindingMap);
+    const host = binding.host;
 
     const latestPath = path.join(latestDir, `${serial}.txt`);
     const previousLatest = readTextIfExists(latestPath);
@@ -249,8 +315,10 @@ function main() {
     const changeType = classifyChange(previousNormalized, normalized, previousSha, currentSha);
 
     const metadata = {
+      metadata_schema_version: 2,
       serial,
       host,
+      site: binding.site,
       received_at: iso,
       source_path: inboxPath,
       archive_path: relativeFrom(repoRoot, archivePath),
@@ -261,8 +329,20 @@ function main() {
       previous_sha256: previousSha,
       changed,
       change_type: changeType,
-      ha_device_id: null,
-      notes: 'starter worker pipeline',
+      binding_map_path: bindingMapPath ? path.resolve(bindingMapPath) : null,
+      ha_device_id: binding.ha_device_id,
+      mqtt_identifier: binding.mqtt_identifier,
+      base_entities: binding.base_entities,
+      device_identity: {
+        manufacturer: binding.manufacturer,
+        model: binding.model,
+        sw_version: binding.sw_version,
+      },
+      binding: {
+        matched_on: binding.matched_on,
+        notes: binding.notes,
+      },
+      notes: ['starter worker pipeline', binding.notes].filter(Boolean),
     };
 
     if (!dryRun) {
@@ -271,7 +351,7 @@ function main() {
       fs.writeFileSync(normalizedPath, normalized, 'utf8');
       const diffSummary = buildDiffSummary({
         serial,
-        host,
+        binding,
         previousNormPath,
         currentNormPath: normalizedPath,
         previousSha,
@@ -291,7 +371,19 @@ function main() {
       };
     }
 
-    results.push({ serial, host, changed, changeType, archivePath, metadataPath, normalizedPath, diffPath });
+    results.push({
+      serial,
+      host,
+      site: binding.site,
+      haDeviceId: binding.ha_device_id,
+      entityCount: binding.base_entities.length,
+      changed,
+      changeType,
+      archivePath,
+      metadataPath,
+      normalizedPath,
+      diffPath,
+    });
   }
 
   if (!dryRun) {

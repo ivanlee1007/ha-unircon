@@ -48,6 +48,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/git-backup-runbook.md`：Git 簡版備份版控的實作 runbook，含目錄、檔名、metadata、commit 規則
 - `docs/git-backup-worker.md`：starter worker 的 CLI 用法與目前能力邊界
 - `docs/git-backup-automation.md`：在 HA 主機上用 shell / cron / Node-RED / n8n 跑 worker 的建議做法
+- `docs/git-backup-binding-map.md`：把 serial 正式對到 host / HA device / base entities 的 binding map 規格
 
 ## 使用前預先需求
 
@@ -106,6 +107,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/git-backup-runbook.md`
 - `docs/git-backup-worker.md`
 - `docs/git-backup-automation.md`
+- `docs/git-backup-binding-map.md`
 
 ### 內建 starter worker
 
@@ -114,6 +116,10 @@ repo 目前已提供一個 Git 簡版備份 worker：
 - `tools/emos_backup_worker.mjs`
 
 可用來掃描 FTP landing inbox，建立 archive / metadata / diff / Git commit。
+
+若要讓 metadata 接上 HA identity，建議再搭配：
+
+- `tools/examples/binding-map.sample.json`
 
 最簡單用法：
 

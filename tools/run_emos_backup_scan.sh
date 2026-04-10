@@ -10,7 +10,7 @@ log() {
 
 ROOT="${EMOS_BACKUP_ROOT:-/share/emostore}"
 REPO="${EMOS_BACKUP_REPO:-$ROOT/repo}"
-HOST_MAP="${EMOS_BACKUP_HOST_MAP:-}"
+BINDING_MAP="${EMOS_BACKUP_BINDING_MAP:-${EMOS_BACKUP_HOST_MAP:-}}"
 PUSH="${EMOS_BACKUP_PUSH:-0}"
 REMOTE="${EMOS_BACKUP_GIT_REMOTE:-origin}"
 BRANCH="${EMOS_BACKUP_GIT_BRANCH:-main}"
@@ -32,8 +32,8 @@ fi
 
 CMD=(node "$REPO_ROOT/tools/emos_backup_worker.mjs" --root "$ROOT" --repo "$REPO" --commit)
 
-if [[ -n "$HOST_MAP" ]]; then
-  CMD+=(--host-map "$HOST_MAP")
+if [[ -n "$BINDING_MAP" ]]; then
+  CMD+=(--binding-map "$BINDING_MAP")
 fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
