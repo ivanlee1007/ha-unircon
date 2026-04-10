@@ -333,6 +333,58 @@ sync_backup_status:
       selector:
         boolean:
 
+compare_backups:
+  name: Compare backups
+  description: Compare two snapshots for a host and emit a diff preview event.
+  fields:
+    host:
+      name: Host
+      description: Target host already known to unircon.
+      required: true
+      selector:
+        text:
+    current_snapshot:
+      name: Current snapshot
+      description: Optional snapshot basename. Defaults to latest snapshot.
+      required: false
+      selector:
+        text:
+    previous_snapshot:
+      name: Previous snapshot
+      description: Optional snapshot basename. Defaults to previous snapshot.
+      required: false
+      selector:
+        text:
+    metadata_root:
+      name: Metadata root
+      description: Optional absolute path or config-relative path to the worker metadata directory.
+      required: false
+      selector:
+        text:
+
+generate_restore_preview:
+  name: Generate restore preview
+  description: Build a safe restore preview payload for a host snapshot without executing any restore.
+  fields:
+    host:
+      name: Host
+      description: Target host already known to unircon.
+      required: true
+      selector:
+        text:
+    snapshot:
+      name: Snapshot
+      description: Optional snapshot basename. Defaults to latest snapshot.
+      required: false
+      selector:
+        text:
+    metadata_root:
+      name: Metadata root
+      description: Optional absolute path or config-relative path to the worker metadata directory.
+      required: false
+      selector:
+        text:
+
 export_inventory:
   name: Export inventory
   description: Emit the current host inventory and runtime summary as an event.

@@ -18,7 +18,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - **Dangerous Command Policy Gate**：對 `write erase` / `config restore` / `reload` / `copy ...` 等高風險命令做攔截與暫時核准
 - **Token Text**：設備序號顯示與手動設定
 - **Command Buttons**：Enable / Show Version / URCON Neighbors / Backup 等快按
-- **Services**：下指令、批次處理、MQTT 測試發佈、鄰居探索、健康檢查、binding map 生成、backup status 同步、inventory 匯出、部署檔生成、動態新增設備
+- **Services**：下指令、批次處理、MQTT 測試發佈、鄰居探索、健康檢查、binding map 生成、backup status 同步、snapshot compare、restore preview、inventory 匯出、部署檔生成、動態新增設備
 - **Custom Card**（v2）：四個分頁
   - 🖥️ **主控台**：即時串流 + 指令輸入 + Hot Keys + 歷史命令 ↑↓
   - 📋 **部署檔**：表單填寫 → 生成 / 複製 / 下載 deploy config
@@ -52,6 +52,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/git-backup-binding-map.md`：把 serial 正式對到 host / HA device / base entities 的 binding map 規格
 - `docs/ha-binding-candidate-exporter.md`：從 HA registry 匯出 binding candidate，減少手刻 binding map
 - `docs/ha-binding-backup-pipeline.md`：把 `save_binding_map` 和 backup worker 串成單條可排程流程
+- `docs/ha-backup-compare-restore.md`：snapshot compare 與 restore preview 的 backend workflow
 
 ## 使用前預先需求
 
@@ -209,6 +210,8 @@ npm run backup:pipeline
 | `unircon.approve_operation` | 暫時核准某台設備的高風險命令 |
 | `unircon.run_health_check` | 對指定設備做 token/version/clock/result 健康檢查 |
 | `unircon.sync_backup_status` | 從 worker metadata 匯回最新 backup 狀態 |
+| `unircon.compare_backups` | 比較某台設備兩個 snapshot，產出 diff preview event |
+| `unircon.generate_restore_preview` | 產出 restore 前置預覽，不直接執行還原 |
 | `unircon.export_inventory` | 匯出目前 inventory / runtime summary（event） |
 | `unircon.export_binding_candidates` | 從 HA device/entity registry 匯出 binding-map 候選（event） |
 | `unircon.generate_binding_map` | 產出可直接落地的 binding-map JSON（event） |
@@ -273,6 +276,39 @@ data:
 - `sensor.unircon_<host>_backup`
 
 看到最新 snapshot 狀態。
+
+### Backup compare 範例
+
+```yaml
+service: unircon.compare_backups
+data:
+  host: Relay-685D
+```
+
+會 fire：`unircon_backup_compare`
+
+事件內含：
+- `current_snapshot` / `previous_snapshot`
+- `line_additions` / `line_removals`
+- `diff_preview`
+- `current_archive_path` / `previous_archive_path`
+
+### Restore preview 範例
+
+```yaml
+service: unircon.generate_restore_preview
+data:
+  host: Relay-685D
+  snapshot: 2026-04-10T19-30-00+08-00
+```
+
+會 fire：`unircon_restore_preview_generated`
+
+事件內含：
+- target snapshot / archive / metadata 路徑
+- warning 清單
+- manual restore steps
+- `required_policy_gate: true`
 
 ## Policy Gate
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
 from datetime import timedelta
 import json
 import logging
@@ -518,6 +519,160 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         if path.is_absolute():
             return path
         return Path(hass.config.path(raw))
+
+    def _resolve_repo_root_from_metadata_root(metadata_root: Path) -> Path:
+        return metadata_root.parent if metadata_root.name == "metadata" else metadata_root
+
+    def _resolve_serial_for_host(host: str) -> str | None:
+        state = _ensure_host_state(host)
+        candidates = [
+            state.get("last_backup_serial"),
+            device_data[DATA_TOKENS].get(host),
+            state.get("token"),
+        ]
+        for candidate in candidates:
+            value = str(candidate or "").strip()
+            if value:
+                return value
+        return None
+
+    def _list_metadata_files(metadata_root: Path, serial: str) -> list[Path]:
+        serial_dir = metadata_root / serial
+        if not serial_dir.exists():
+            return []
+        return sorted(serial_dir.glob("*.json"))
+
+    def _load_metadata_record(metadata_path: Path) -> dict[str, Any]:
+        data = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(f"invalid metadata json: {metadata_path}")
+        data["_metadata_file"] = str(metadata_path)
+        data["_snapshot"] = metadata_path.stem
+        return data
+
+    def _resolve_metadata_record(
+        metadata_root: Path,
+        serial: str,
+        snapshot: str | None,
+        *,
+        latest_index: int,
+    ) -> dict[str, Any] | None:
+        files = _list_metadata_files(metadata_root, serial)
+        if not files:
+            return None
+        if snapshot:
+            normalized = snapshot.removesuffix(".json")
+            for path in files:
+                if path.stem == normalized or path.name == snapshot:
+                    return _load_metadata_record(path)
+            return None
+        target_index = len(files) - 1 - latest_index
+        if target_index < 0 or target_index >= len(files):
+            return None
+        return _load_metadata_record(files[target_index])
+
+    def _read_optional_text(path: Path | None) -> str | None:
+        if path is None or not path.exists():
+            return None
+        return path.read_text(encoding="utf-8")
+
+    def _resolve_snapshot_path(repo_root: Path, relative_path: Any) -> Path | None:
+        raw = str(relative_path or "").strip()
+        if not raw:
+            return None
+        path = Path(raw)
+        return path if path.is_absolute() else repo_root / path
+
+    def _build_backup_compare_payload(
+        host: str,
+        serial: str,
+        current_record: dict[str, Any],
+        previous_record: dict[str, Any],
+        metadata_root: Path,
+    ) -> dict[str, Any]:
+        repo_root = _resolve_repo_root_from_metadata_root(metadata_root)
+        current_norm_path = _resolve_snapshot_path(repo_root, current_record.get("normalized_path"))
+        previous_norm_path = _resolve_snapshot_path(repo_root, previous_record.get("normalized_path"))
+        current_text = _read_optional_text(current_norm_path) or ""
+        previous_text = _read_optional_text(previous_norm_path) or ""
+        diff_lines = list(
+            difflib.unified_diff(
+                previous_text.splitlines(),
+                current_text.splitlines(),
+                fromfile=previous_record.get("_snapshot", "previous"),
+                tofile=current_record.get("_snapshot", "current"),
+                lineterm="",
+            )
+        )
+        added_lines = sum(
+            1
+            for line in diff_lines
+            if line.startswith("+") and not line.startswith("+++")
+        )
+        removed_lines = sum(
+            1
+            for line in diff_lines
+            if line.startswith("-") and not line.startswith("---")
+        )
+        preview_limit = 200
+        return {
+            "entry_id": entry.entry_id,
+            "host": host,
+            "serial": serial,
+            "metadata_root": str(metadata_root),
+            "current_snapshot": current_record.get("_snapshot"),
+            "previous_snapshot": previous_record.get("_snapshot"),
+            "current_received_at": current_record.get("received_at"),
+            "previous_received_at": previous_record.get("received_at"),
+            "current_change_type": current_record.get("change_type"),
+            "previous_change_type": previous_record.get("change_type"),
+            "current_sha256": current_record.get("sha256"),
+            "previous_sha256": previous_record.get("sha256"),
+            "current_archive_path": str(_resolve_snapshot_path(repo_root, current_record.get("archive_path")) or ""),
+            "previous_archive_path": str(_resolve_snapshot_path(repo_root, previous_record.get("archive_path")) or ""),
+            "current_metadata_path": current_record.get("_metadata_file"),
+            "previous_metadata_path": previous_record.get("_metadata_file"),
+            "line_additions": added_lines,
+            "line_removals": removed_lines,
+            "diff_preview": "\n".join(diff_lines[:preview_limit]),
+            "diff_truncated": len(diff_lines) > preview_limit,
+        }
+
+    def _build_restore_preview_payload(
+        host: str,
+        serial: str,
+        target_record: dict[str, Any],
+        metadata_root: Path,
+    ) -> dict[str, Any]:
+        repo_root = _resolve_repo_root_from_metadata_root(metadata_root)
+        archive_path = _resolve_snapshot_path(repo_root, target_record.get("archive_path"))
+        latest_record = _resolve_metadata_record(metadata_root, serial, None, latest_index=0)
+        return {
+            "entry_id": entry.entry_id,
+            "host": host,
+            "serial": serial,
+            "metadata_root": str(metadata_root),
+            "target_snapshot": target_record.get("_snapshot"),
+            "target_received_at": target_record.get("received_at"),
+            "target_change_type": target_record.get("change_type"),
+            "target_sha256": target_record.get("sha256"),
+            "target_archive_path": str(archive_path or ""),
+            "target_metadata_path": target_record.get("_metadata_file"),
+            "latest_snapshot": latest_record.get("_snapshot") if latest_record else None,
+            "latest_received_at": latest_record.get("received_at") if latest_record else None,
+            "required_policy_gate": True,
+            "warnings": [
+                "Restore is a high-risk workflow, review diff before acting.",
+                "Do not overwrite the current device blindly, verify host/serial first.",
+                "Actual restore command depends on device firmware and field workflow, keep operator approval in the loop.",
+            ],
+            "manual_steps": [
+                "Compare current snapshot vs target snapshot before restore.",
+                "Stage the target archive file into the approved restore location or workflow.",
+                "Use operator-approved device restore procedure for this firmware/model.",
+                "After restore, run health check and sync backup status again.",
+            ],
+        }
 
     def _clear_backup_fields(state: dict[str, Any]) -> None:
         state["last_backup_at"] = None
@@ -1099,6 +1254,147 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "service/sync_backup_status",
         )
 
+    async def handle_compare_backups(call: ServiceCall) -> None:
+        host = str(call.data.get("host", "")).strip()
+        if not host:
+            return
+        serial = _resolve_serial_for_host(host)
+        if not serial:
+            _fire_console_output(
+                f"[ERROR] No serial/token known for host {host}",
+                "service/compare_backups",
+            )
+            return
+
+        metadata_root = _resolve_metadata_root(call.data.get("metadata_root"))
+        current_snapshot = str(call.data.get("current_snapshot", "")).strip() or None
+        previous_snapshot = str(call.data.get("previous_snapshot", "")).strip() or None
+
+        try:
+            current_record = await hass.async_add_executor_job(
+                lambda: _resolve_metadata_record(
+                    metadata_root,
+                    serial,
+                    current_snapshot,
+                    latest_index=0,
+                )
+            )
+            previous_record = await hass.async_add_executor_job(
+                lambda: _resolve_metadata_record(
+                    metadata_root,
+                    serial,
+                    previous_snapshot,
+                    latest_index=1,
+                )
+            )
+        except Exception as err:
+            _fire_console_output(f"[ERROR] Failed to load compare metadata: {err}", "service/compare_backups")
+            _append_audit(
+                "backup_compare",
+                host=host,
+                status="error",
+                message="backup compare failed",
+                details={"reason": str(err), "metadata_root": str(metadata_root)},
+            )
+            return
+
+        if not current_record or not previous_record:
+            _fire_console_output(
+                f"[ERROR] Not enough snapshots to compare for {host} ({serial})",
+                "service/compare_backups",
+            )
+            return
+
+        payload = await hass.async_add_executor_job(
+            _build_backup_compare_payload,
+            host,
+            serial,
+            current_record,
+            previous_record,
+            metadata_root,
+        )
+        hass.bus.async_fire(f"{DOMAIN}_backup_compare", payload)
+        _append_audit(
+            "backup_compare",
+            host=host,
+            message=f"compare backups {payload['previous_snapshot']} -> {payload['current_snapshot']}",
+            details={
+                "serial": serial,
+                "metadata_root": str(metadata_root),
+                "line_additions": payload["line_additions"],
+                "line_removals": payload["line_removals"],
+            },
+        )
+        _fire_console_output(
+            f"[BACKUP] Compared {host} snapshots {payload['previous_snapshot']} -> {payload['current_snapshot']}",
+            "service/compare_backups",
+        )
+
+    async def handle_generate_restore_preview(call: ServiceCall) -> None:
+        host = str(call.data.get("host", "")).strip()
+        if not host:
+            return
+        serial = _resolve_serial_for_host(host)
+        if not serial:
+            _fire_console_output(
+                f"[ERROR] No serial/token known for host {host}",
+                "service/generate_restore_preview",
+            )
+            return
+
+        metadata_root = _resolve_metadata_root(call.data.get("metadata_root"))
+        snapshot = str(call.data.get("snapshot", "")).strip() or None
+
+        try:
+            target_record = await hass.async_add_executor_job(
+                lambda: _resolve_metadata_record(
+                    metadata_root,
+                    serial,
+                    snapshot,
+                    latest_index=0,
+                )
+            )
+        except Exception as err:
+            _fire_console_output(f"[ERROR] Failed to load restore preview metadata: {err}", "service/generate_restore_preview")
+            _append_audit(
+                "restore_preview",
+                host=host,
+                status="error",
+                message="restore preview failed",
+                details={"reason": str(err), "metadata_root": str(metadata_root)},
+            )
+            return
+
+        if not target_record:
+            _fire_console_output(
+                f"[ERROR] Snapshot not found for {host} ({serial})",
+                "service/generate_restore_preview",
+            )
+            return
+
+        payload = await hass.async_add_executor_job(
+            _build_restore_preview_payload,
+            host,
+            serial,
+            target_record,
+            metadata_root,
+        )
+        hass.bus.async_fire(f"{DOMAIN}_restore_preview_generated", payload)
+        _append_audit(
+            "restore_preview",
+            host=host,
+            message=f"generate restore preview for {payload['target_snapshot']}",
+            details={
+                "serial": serial,
+                "metadata_root": str(metadata_root),
+                "target_snapshot": payload["target_snapshot"],
+            },
+        )
+        _fire_console_output(
+            f"[BACKUP] Generated restore preview for {host} snapshot {payload['target_snapshot']}",
+            "service/generate_restore_preview",
+        )
+
     async def handle_export_inventory(call: ServiceCall) -> None:
         hosts_list = call.data.get("hosts", []) or list(device_data[DATA_HOSTS])
         now = dt_util.utcnow()
@@ -1268,6 +1564,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, "batch_command", handle_batch_command)
         hass.services.async_register(DOMAIN, "run_health_check", handle_run_health_check)
         hass.services.async_register(DOMAIN, "sync_backup_status", handle_sync_backup_status)
+        hass.services.async_register(DOMAIN, "compare_backups", handle_compare_backups)
+        hass.services.async_register(DOMAIN, "generate_restore_preview", handle_generate_restore_preview)
         hass.services.async_register(DOMAIN, "export_inventory", handle_export_inventory)
         hass.services.async_register(DOMAIN, "export_binding_candidates", handle_export_binding_candidates)
         hass.services.async_register(DOMAIN, "generate_binding_map", handle_generate_binding_map)
@@ -1305,6 +1603,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "batch_command",
             "run_health_check",
             "sync_backup_status",
+            "compare_backups",
+            "generate_restore_preview",
             "export_inventory",
             "export_binding_candidates",
             "generate_binding_map",
