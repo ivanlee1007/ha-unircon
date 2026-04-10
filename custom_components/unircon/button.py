@@ -17,6 +17,7 @@ BUTTON_DEFINITIONS = [
     {"suffix": "enable", "name": "Enable", "command": "en {username} {password}", "icon": "mdi:key"},
     {"suffix": "show_version", "name": "Show Version", "command": "sh ver", "icon": "mdi:information"},
     {"suffix": "show_result", "name": "Show Result", "command": "sh result", "icon": "mdi:clipboard-text"},
+    {"suffix": "health_check", "name": "Health Check", "command": None, "icon": "mdi:stethoscope"},
     {"suffix": "urcon_neighbors", "name": "URCON Neighbors", "command": "sh urcon/ne", "icon": "mdi:lan"},
     {"suffix": "backup", "name": "Backup", "command": "backup", "icon": "mdi:backup-restore"},
 ]
@@ -54,6 +55,7 @@ class UNiNUSCommandButton(ButtonEntity):
         self._entry = entry
         self._host = host
         self._command_template = btn_def["command"]
+        self._suffix = btn_def["suffix"]
         self._attr_name = f"UNiNUS {host} {btn_def['name']}"
         self._attr_unique_id = (
             f"unircon_{entry.entry_id[:8]}_{host}_{btn_def['suffix']}"
@@ -62,6 +64,16 @@ class UNiNUSCommandButton(ButtonEntity):
 
     async def async_press(self) -> None:
         """Press the button - send command to device."""
+        if self._suffix == "health_check":
+            await self._hass.services.async_call(
+                DOMAIN,
+                "run_health_check",
+                {"hosts": [self._host], "delay": 1},
+                blocking=True,
+            )
+            _LOGGER.info("Button pressed: %s → run_health_check", self._attr_name)
+            return
+
         data = self._hass.data[DOMAIN][self._entry.entry_id]
         token = data.get(DATA_TOKENS, {}).get(self._host, "00000000")
         config = self._entry.data

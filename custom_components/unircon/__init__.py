@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import re
 from typing import Any
 
 from homeassistant.components import frontend
@@ -12,11 +14,14 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.util import dt as dt_util
 import voluptuous as vol
 
 from .const import (
     CARD_RESOURCE_URL,
     CARD_STATIC_URL,
+    DATA_AUDIT_LOG,
+    DATA_HOST_STATE,
     CONF_BROKER_HOST,
     CONF_BROKER_PORT,
     CONF_CALLBACK_IP,
@@ -27,9 +32,9 @@ from .const import (
     CONF_USERNAME,
     DEFAULT_BROKER_PORT,
     DEFAULT_DISCOVERY_HOST_NAME,
-    CONF_SITES,
-    CONF_ACTIVE_SITE,
     DOMAIN,
+    HEALTH_STALE_SECONDS,
+    MAX_AUDIT_LOG,
 )
 from .mqtt_helper import UNiNUSMQTT
 
@@ -145,8 +150,101 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DATA_HOSTS: hosts,
         DATA_TOKENS: {},
         DATA_CONSOLE_HISTORY: {h: [] for h in hosts},
+        DATA_HOST_STATE: {},
+        DATA_AUDIT_LOG: [],
     }
     hass.data[DOMAIN][entry.entry_id] = device_data
+
+    def _now_iso() -> str:
+        return dt_util.utcnow().isoformat()
+
+    def _ensure_host_state(host: str) -> dict[str, Any]:
+        state_map = device_data.setdefault(DATA_HOST_STATE, {})
+        return state_map.setdefault(
+            host,
+            {
+                "host": host,
+                "status": "offline",
+                "last_seen": None,
+                "last_topic": None,
+                "message_count": 0,
+                "last_command": None,
+                "last_command_at": None,
+                "last_health_check_at": None,
+                "firmware_version": None,
+                "device_model": None,
+                "last_error": None,
+            },
+        )
+
+    for host in hosts:
+        _ensure_host_state(host)
+
+    def _append_audit(
+        kind: str,
+        *,
+        host: str | None = None,
+        status: str = "info",
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        entry_data = {
+            "at": _now_iso(),
+            "kind": kind,
+            "status": status,
+            "host": host,
+            "message": message,
+            "details": details or {},
+        }
+        audit_log = device_data.setdefault(DATA_AUDIT_LOG, [])
+        audit_log.append(entry_data)
+        if len(audit_log) > MAX_AUDIT_LOG:
+            del audit_log[:-MAX_AUDIT_LOG]
+        hass.loop.call_soon_threadsafe(
+            hass.bus.async_fire,
+            f"{DOMAIN}_audit",
+            entry_data,
+        )
+
+    def _extract_line(data: Any, payload_text: str) -> str:
+        if isinstance(data, dict) and isinstance(data.get("data"), dict):
+            output = data["data"].get("output")
+            if output:
+                return str(output)
+        if isinstance(data, dict) and "raw" in data:
+            return str(data["raw"])
+        if isinstance(data, dict):
+            return json.dumps(data, ensure_ascii=False)
+        return payload_text
+
+    def _update_host_state_from_line(host: str, line: str, topic: str) -> None:
+        state = _ensure_host_state(host)
+        state["status"] = "online"
+        state["last_seen"] = _now_iso()
+        state["last_topic"] = topic
+        state["message_count"] = int(state.get("message_count", 0)) + 1
+
+        firmware_match = re.search(r"\b\d+\.\d+\.\d+\([^)]+\)[A-Za-z0-9._-]*", line)
+        if firmware_match:
+            state["firmware_version"] = firmware_match.group(0)
+
+        model_match = re.search(r"\b(?:Relay|UB-R|USS|UM-R)-[A-Za-z0-9]+\b", line)
+        if model_match:
+            state["device_model"] = model_match.group(0)
+
+        lowered = line.lower()
+        if "error" in lowered or "failed" in lowered or "timeout" in lowered:
+            state["last_error"] = line[:300]
+
+    def _mark_host_command(host: str, command: str, *, kind: str = "command") -> None:
+        state = _ensure_host_state(host)
+        state["last_command"] = command
+        state["last_command_at"] = _now_iso()
+        _append_audit(kind, host=host, message=command, details={"command": command})
+
+    def _mark_health_check(host: str) -> None:
+        state = _ensure_host_state(host)
+        state["last_health_check_at"] = _now_iso()
 
     # Message handler
     def _handle_message_in_loop(topic: str, payload: str) -> None:
@@ -183,11 +281,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for host in list(device_data[DATA_HOSTS]):
                 if f"/{host}/console/" in topic or f"pubrsp/{host}" in topic:
                     history = device_data[DATA_CONSOLE_HISTORY].get(host, [])
-                    line = data.get("data", {}).get("output", payload) if isinstance(data, dict) else payload
+                    line = _extract_line(data, payload)
                     history.append({"topic": topic, "data": data, "line": line})
                     if len(history) > 500:
                         history[:] = history[-500:]
                     device_data[DATA_CONSOLE_HISTORY][host] = history
+                    _update_host_state_from_line(host, line, topic)
 
                     if isinstance(data, dict):
                         token = data.get("token")
@@ -195,6 +294,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                             token = data["data"].get("token")
                         if token:
                             device_data[DATA_TOKENS][host] = token
+                            _ensure_host_state(host)["token"] = token
 
                     _emit_console_event(
                         {"host": host, "topic": topic, "data": data}
@@ -330,6 +430,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             mqtt_client.send_command(host, token, command)
 
         await hass.async_add_executor_job(_send)
+        _mark_host_command(host, command)
 
     async def handle_request_token(call: ServiceCall) -> None:
         host = call.data.get("host", "")
@@ -352,6 +453,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             mqtt_client.request_token(host, user, pw)
 
         await hass.async_add_executor_job(_req)
+        _append_audit(
+            "request_token",
+            host=host,
+            message="request token",
+            details={"username": user},
+        )
 
     async def handle_mqtt_publish(call: ServiceCall) -> None:
         topic = call.data.get("topic", "")
@@ -373,6 +480,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             mqtt_client.publish_test(topic, payload)
 
         await hass.async_add_executor_job(_pub)
+        _append_audit(
+            "mqtt_publish",
+            message=f"{topic} <= {payload[:120]}",
+            details={"topic": topic},
+        )
 
     async def handle_collect_neighbors(call: ServiceCall) -> None:
         import asyncio
@@ -418,6 +530,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         try:
             topic, payload_obj = await hass.async_add_executor_job(_collect)
+            _append_audit(
+                "neighbor_discovery",
+                message="collect neighbors",
+                details={"topic": topic, "domain": requested_domain},
+            )
             _fire_console_output(
                 f"[URCON] Neighbor discovery sent via backend MQTT ({broker_host_used}:{broker_port_used})",
                 "service/collect_neighbors",
@@ -451,18 +568,85 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             return
 
         for host in hosts_list:
+            _mark_health_check(host)
             token = device_data[DATA_TOKENS].get(host, "00000000")
             for cmd in commands:
                 def _send_batch(h=host, t=token, c=cmd) -> None:
                     mqtt_client.send_command(h, t, c)
 
                 await hass.async_add_executor_job(_send_batch)
+                _mark_host_command(host, cmd, kind="batch_command")
                 await asyncio.sleep(delay)
+
+    async def handle_run_health_check(call: ServiceCall) -> None:
+        hosts_list = call.data.get("hosts", []) or list(device_data[DATA_HOSTS])
+        delay = float(call.data.get("delay", 1.0))
+
+        ok, err_text = await _ensure_backend_mqtt_connected("run_health_check")
+        if not ok:
+            detail = f": {err_text}" if err_text else ""
+            _fire_console_output(
+                f"[ERROR] Backend MQTT reconnect failed; health check not started ({broker_host}:{broker_port}){detail}",
+                "service/run_health_check",
+            )
+            return
+
+        for host in hosts_list:
+            if host not in device_data[DATA_HOSTS]:
+                continue
+            _mark_health_check(host)
+            _append_audit("health_check", host=host, message="run health check")
+
+            def _req(h=host) -> None:
+                mqtt_client.request_token(h, username, password)
+
+            await hass.async_add_executor_job(_req)
+            await asyncio.sleep(delay)
+
+            token = device_data[DATA_TOKENS].get(host, "00000000")
+            for cmd in ["sh ver", "sh clock", "sh result"]:
+                def _send_health(h=host, t=token, c=cmd) -> None:
+                    mqtt_client.send_command(h, t, c)
+
+                await hass.async_add_executor_job(_send_health)
+                _mark_host_command(host, cmd, kind="health_check_command")
+                await asyncio.sleep(delay)
+
+    async def handle_export_inventory(call: ServiceCall) -> None:
+        hosts_list = call.data.get("hosts", []) or list(device_data[DATA_HOSTS])
+        now = dt_util.utcnow()
+        inventory: list[dict[str, Any]] = []
+        for host in hosts_list:
+            state = dict(_ensure_host_state(host))
+            last_seen_text = state.get("last_seen")
+            health = "offline"
+            if last_seen_text:
+                try:
+                    last_seen = dt_util.parse_datetime(last_seen_text)
+                    if last_seen is not None:
+                        age = (now - last_seen).total_seconds()
+                        health = "healthy" if age <= HEALTH_STALE_SECONDS else "stale"
+                except Exception:
+                    health = "unknown"
+            state["health"] = health
+            state["token"] = device_data[DATA_TOKENS].get(host, state.get("token"))
+            inventory.append(state)
+
+        hass.bus.async_fire(
+            f"{DOMAIN}_inventory_exported",
+            {"entry_id": entry.entry_id, "hosts": hosts_list, "inventory": inventory},
+        )
+        _append_audit(
+            "inventory_export",
+            message=f"export inventory ({len(hosts_list)} hosts)",
+            details={"count": len(hosts_list)},
+        )
 
     async def handle_generate_deploy(call: ServiceCall) -> None:
         """Generate deploy config and return as event."""
         config_text = generate_deploy_config(dict(call.data))
         hass.bus.async_fire(f"{DOMAIN}_deploy_generated", {"config": config_text})
+        _append_audit("deploy_generate", message="generate deploy config")
 
     async def handle_add_device(call: ServiceCall) -> None:
         """Add a new device to the running config."""
@@ -476,6 +660,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         updated_hosts = [*device_data[DATA_HOSTS], new_host]
         device_data[DATA_HOSTS] = updated_hosts
         device_data[DATA_CONSOLE_HISTORY][new_host] = []
+        _ensure_host_state(new_host)
 
         self_data = {**entry.data, CONF_HOSTS: updated_hosts}
         hass.config_entries.async_update_entry(entry, data=self_data)
@@ -487,6 +672,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await hass.async_add_executor_job(_sub_single)
 
         _fire_console_output(f"[INFO] Added device: {new_host}", "service/add_device")
+        _append_audit("add_device", host=new_host, message=f"added device {new_host}")
         _LOGGER.info("Added new device: %s", new_host)
 
         # Reload platforms to create persistent entities for new device.
@@ -498,6 +684,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, "mqtt_publish", handle_mqtt_publish)
         hass.services.async_register(DOMAIN, "collect_neighbors", handle_collect_neighbors)
         hass.services.async_register(DOMAIN, "batch_command", handle_batch_command)
+        hass.services.async_register(DOMAIN, "run_health_check", handle_run_health_check)
+        hass.services.async_register(DOMAIN, "export_inventory", handle_export_inventory)
         hass.services.async_register(DOMAIN, "generate_deploy", handle_generate_deploy)
         hass.services.async_register(DOMAIN, "add_device", handle_add_device)
 
@@ -528,6 +716,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "mqtt_publish",
             "collect_neighbors",
             "batch_command",
+            "run_health_check",
+            "export_inventory",
             "generate_deploy",
             "add_device",
         ]:

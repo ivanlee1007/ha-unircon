@@ -4,7 +4,7 @@ DOMAIN = "unircon"
 
 CARD_JS_FILENAME = "unircon-console-card.js"
 CARD_STATIC_URL = f"/{DOMAIN}_static/{CARD_JS_FILENAME}"
-CARD_RESOURCE_VERSION = "1.1.3"
+CARD_RESOURCE_VERSION = "1.2.0"
 CARD_RESOURCE_URL = f"{CARD_STATIC_URL}?v={CARD_RESOURCE_VERSION}"
 
 # Config keys
@@ -45,3 +45,8 @@ STATE_OFFLINE = "offline"
 # Runtime data keys
 DATA_CONSOLE_HISTORY = "console_history"
 DATA_TOKENS = "tokens"
+DATA_HOST_STATE = "host_state"
+DATA_AUDIT_LOG = "audit_log"
+
+MAX_AUDIT_LOG = 300
+HEALTH_STALE_SECONDS = 15 * 60

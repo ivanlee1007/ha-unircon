@@ -2,19 +2,41 @@
 
 Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS IoT 設備。
 
+目前定位：**EMOS / UNiNUS 設備運維中台（operations cockpit）**，不是完整 fleet/OTA backend 的替代品。
+
 ## 功能
 
 - **Config Flow**：HA UI 一鍵設定 MQTT Broker + 設備清單（目前單一實例）
 - **Console Sensor**：每台設備的即時 console 輸出
 - **Status Sensor**：設備連線狀態
+- **Fleet Summary Sensor**：整體設備 online / stale / offline 摘要
+- **Audit Log Sensor**：整合層服務操作與盤點輸出紀錄
+- **Last Seen / Firmware Sensors**：每台設備最後回報時間、已知韌體版本
 - **Token Text**：設備序號顯示與手動設定
 - **Command Buttons**：Enable / Show Version / URCON Neighbors / Backup 等快按
-- **Services**：下指令、批次處理、MQTT 測試發佈、鄰居探索、部署檔生成、動態新增設備
+- **Services**：下指令、批次處理、MQTT 測試發佈、鄰居探索、健康檢查、inventory 匯出、部署檔生成、動態新增設備
 - **Custom Card**（v2）：四個分頁
   - 🖥️ **主控台**：即時串流 + 指令輸入 + Hot Keys + 歷史命令 ↑↓
   - 📋 **部署檔**：表單填寫 → 生成 / 複製 / 下載 deploy config
   - 📦 **批次處理**：多主機 × 多指令一鍵執行
   - 📡 **MQTT**：Broker 設定 + 測試發佈 + URCON 鄰居探索（可一鍵加入主機清單）
+
+## 這個 integration 適合做什麼
+
+適合：
+- 集中式設備盤點與健康檢查
+- 日常運維操作入口
+- 批次指令與批次檢查
+- 基本 audit trail
+- 設備 console / MQTT / URCON 作業面板
+
+不建議單獨扛：
+- 完整企業級 RBAC
+- 多租戶隔離
+- 完整 OTA 波次治理
+- 長期 config version store / rollback engine
+
+這些建議由外部 backend 承接，HA / `ha-unircon` 當前台與操作入口。
 
 ## 安裝
 
@@ -39,12 +61,22 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 |--------|------|------|
 | `sensor.unircon_<host>_console` | sensor | Console 輸出（含 200 行歷史） |
 | `sensor.unircon_<host>_status` | sensor | 設備狀態（online / offline） |
+| `sensor.unircon_<host>_last_seen` | sensor | 最後回報時間（integration 收到訊息） |
+| `sensor.unircon_<host>_firmware` | sensor | 已知韌體版本（從 console 輸出解析） |
 | `text.unircon_<host>_token` | text | 設備序號 |
 | `button.unircon_<host>_enable` | button | Enable 設備 |
 | `button.unircon_<host>_show_version` | button | 顯示版本 |
 | `button.unircon_<host>_show_result` | button | 顯示結果 |
+| `button.unircon_<host>_health_check` | button | 對單台設備執行健康檢查 |
 | `button.unircon_<host>_urcon_neighbors` | button | URCON 鄰居探索 |
 | `button.unircon_<host>_backup` | button | 備份 |
+
+### Per-Integration（每個 entry 一組）
+
+| Entity | 類型 | 說明 |
+|--------|------|------|
+| `sensor.unircon_<entry>_fleet_summary` | sensor | 全體設備 online/stale/offline 摘要 |
+| `sensor.unircon_<entry>_audit_log` | sensor | 最新 audit 記錄與最近 20 筆整合層操作 |
 
 ## Services
 
@@ -55,6 +87,8 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 | `unircon.request_token` | 要求設備序號 |
 | `unircon.mqtt_publish` | MQTT 測試發佈 |
 | `unircon.collect_neighbors` | URCOM 鄰居探索 |
+| `unircon.run_health_check` | 對指定設備做 token/version/clock/result 健康檢查 |
+| `unircon.export_inventory` | 匯出目前 inventory / runtime summary（event） |
 | `unircon.generate_deploy` | 生成設備部署檔（結果透過 event 傳回） |
 | `unircon.add_device` | 動態新增一台設備到整合中 |
 
@@ -113,6 +147,15 @@ automation:
           commands: ["sh ver", "sh result"]
           delay: 1
 
+# 每 30 分鐘跑一次健康檢查
+  - trigger:
+      - platform: time_pattern
+        minutes: "/30"
+    action:
+      - service: unircon.run_health_check
+        data:
+          delay: 1
+
 # 設備離線通知
   - trigger:
       - platform: state
@@ -135,12 +178,30 @@ automation:
       - service: unircon.add_device
         data:
           host: "{{ trigger.event.data.host }}"
+
+# 匯出 inventory 後寫入 logbook / 外部處理
+  - trigger:
+      - platform: event
+        event_type: unircon_inventory_exported
+    action:
+      - service: logbook.log
+        data:
+          name: "UNiNUS Inventory"
+          message: "已匯出 {{ trigger.event.data.inventory | count }} 台設備摘要"
 ```
 
 ## 相關
 
 - 原始 Console：[UNiNUS Remote Console v24](https://github.com/ivanlee1007/ha-unircon)
 - MQTT Protocol：`ha/sub/<host>` / `ha/pub/<host>/console/` / `ha/pubrsp/<host>`
+
+## Roadmap direction
+
+目前建議把 `ha-unircon` 視為：
+
+- **HA 內就做**：fleet dashboard、health monitoring、batch ops、basic audit
+- **HA + 外部 backend**：config versioning / rollback、policy gate、長期 audit store
+- **不建議只放 HA**：完整 OTA orchestration、企業級 RBAC、多租戶治理
 
 ## License
 
