@@ -10,6 +10,7 @@ log() {
 
 ROOT="${EMOS_BACKUP_ROOT:-/share/emostore}"
 REPO="${EMOS_BACKUP_REPO:-$ROOT/repo}"
+INBOX="${EMOS_BACKUP_INBOX:-/share}"
 BINDING_MAP="${EMOS_BACKUP_BINDING_MAP:-${EMOS_BACKUP_HOST_MAP:-}}"
 PUSH="${EMOS_BACKUP_PUSH:-0}"
 REMOTE="${EMOS_BACKUP_GIT_REMOTE:-origin}"
@@ -30,7 +31,7 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
   exit 0
 fi
 
-CMD=(node "$REPO_ROOT/tools/emos_backup_worker.mjs" --root "$ROOT" --repo "$REPO" --commit)
+CMD=(node "$REPO_ROOT/tools/emos_backup_worker.mjs" --root "$ROOT" --repo "$REPO" --inbox "$INBOX" --commit)
 
 if [[ -n "$BINDING_MAP" ]]; then
   CMD+=(--binding-map "$BINDING_MAP")
@@ -41,7 +42,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
 fi
 
 log "starting backup scan"
-log "root=$ROOT repo=$REPO push=$PUSH dry_run=$DRY_RUN"
+log "root=$ROOT repo=$REPO inbox=$INBOX push=$PUSH dry_run=$DRY_RUN"
 
 "${CMD[@]}"
 

@@ -57,6 +57,7 @@ repo 內建：
 
 ```bash
 export EMOS_BACKUP_ROOT=/share/emostore
+export EMOS_BACKUP_INBOX=/share
 export EMOS_BACKUP_PUSH=0
 bash tools/run_emos_backup_scan.sh
 ```

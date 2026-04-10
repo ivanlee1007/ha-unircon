@@ -24,7 +24,7 @@ Last updated: 2026-04-10
 
 目前這版會做：
 
-1. 掃描 `inbox/*.txt`
+1. 掃描 EMOS FTP landing dir 的 `*.txt`（預設 `/share/<serial>.txt`）
 2. 用檔名推 serial（例如 `7432284.txt`）
 3. 建立：
    - `latest/<serial>.txt`
@@ -43,14 +43,18 @@ Last updated: 2026-04-10
 
 若不帶參數，預設：
 
+- inbox: `/share`
 - root: `/share/emostore`
 - repo: `/share/emostore/repo`
 
 也就是：
 
 ```text
+/share/
+  7432284.txt
+  1234567.txt
+
 /share/emostore/
-  inbox/
   latest/
   runtime/
   repo/
@@ -67,25 +71,25 @@ Last updated: 2026-04-10
 ### 只掃一次，不 commit
 
 ```bash
-node tools/emos_backup_worker.mjs --root /share/emostore
+node tools/emos_backup_worker.mjs --root /share/emostore --inbox /share
 ```
 
 ### 掃一次並 commit
 
 ```bash
-node tools/emos_backup_worker.mjs --root /share/emostore --commit
+node tools/emos_backup_worker.mjs --root /share/emostore --inbox /share --commit
 ```
 
 ### 用 package script
 
 ```bash
-npm run backup:scan -- --root /share/emostore --commit
+npm run backup:scan -- --root /share/emostore --inbox /share --commit
 ```
 
 ### Dry run
 
 ```bash
-node tools/emos_backup_worker.mjs --root /share/emostore --dry-run
+node tools/emos_backup_worker.mjs --root /share/emostore --inbox /share --dry-run
 ```
 
 ---
@@ -94,6 +98,8 @@ node tools/emos_backup_worker.mjs --root /share/emostore --dry-run
 
 - `--root <path>`
   - backup working root
+- `--inbox <path>`
+  - EMOS FTP landing dir, 預設 `/share`
 - `--repo <path>`
   - Git repo root, 預設是 `<root>/repo`
 - `--host-map <path>`

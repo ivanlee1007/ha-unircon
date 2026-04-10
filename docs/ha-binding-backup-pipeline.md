@@ -59,6 +59,7 @@ export PIPELINE_BINDING_MAP_PATH=/config/unircon/binding-map.generated.json
 
 ```bash
 export EMOS_BACKUP_ROOT=/share/emostore
+export EMOS_BACKUP_INBOX=/share
 export EMOS_BACKUP_PUSH=0
 ```
 

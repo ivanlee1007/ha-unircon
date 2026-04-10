@@ -60,19 +60,22 @@ Last updated: 2026-04-10
 ### 建議路徑
 
 ```text
+/share/
+  7432284.txt
+  1234567.txt
+
 /share/emostore/
-  inbox/
   latest/
-  archive/
-  metadata/
-  normalized/
-  diffs/
   repo/
+    archive/
+    metadata/
+    normalized/
+    diffs/
 ```
 
 ### 各資料夾用途
 
-- `inbox/`
+- `/share/*.txt`
   - FTP server landing path
   - EMOS 直接上傳到這裡
   - 可能會被同名覆蓋
@@ -104,7 +107,7 @@ Last updated: 2026-04-10
 EMOS 常見是固定檔名，例如：
 
 ```text
-/share/emostore/inbox/7432284.txt
+/share/7432284.txt
 ```
 
 ### Archive snapshot
@@ -112,25 +115,25 @@ EMOS 常見是固定檔名，例如：
 改存成：
 
 ```text
-/share/emostore/archive/7432284/2026-04-10T16-43-00+08-00.txt
+/share/emostore/repo/archive/7432284/2026-04-10T16-43-00+08-00.txt
 ```
 
 ### Metadata
 
 ```text
-/share/emostore/metadata/7432284/2026-04-10T16-43-00+08-00.json
+/share/emostore/repo/metadata/7432284/2026-04-10T16-43-00+08-00.json
 ```
 
 ### Normalized
 
 ```text
-/share/emostore/normalized/7432284/2026-04-10T16-43-00+08-00.norm.txt
+/share/emostore/repo/normalized/7432284/2026-04-10T16-43-00+08-00.norm.txt
 ```
 
 ### Diff summary
 
 ```text
-/share/emostore/diffs/7432284/2026-04-10T16-43-00+08-00.diff.md
+/share/emostore/repo/diffs/7432284/2026-04-10T16-43-00+08-00.diff.md
 ```
 
 ---
@@ -153,7 +156,7 @@ repo/
 
 ### 為什麼不把 inbox 也放進 Git
 
-因為 `inbox/` 是 landing zone，容易反覆覆蓋，不適合當歷史來源。
+因為 `/share/*.txt` 是 landing zone，容易反覆覆蓋，不適合當歷史來源。
 
 ---
 
@@ -164,7 +167,7 @@ repo/
 例如：
 
 ```text
-/share/emostore/inbox/7432284.txt
+/share/7432284.txt
 ```
 
 ### Step 2. watcher / scanner 發現檔案變化
@@ -173,7 +176,7 @@ repo/
 
 最簡單可行做法：
 
-- 每 1 到 5 分鐘掃一次 `inbox/`
+- 每 1 到 5 分鐘掃一次 `/share/*.txt`
 - 比對檔案 mtime / size / sha256
 
 ### Step 3. 產生 snapshot
@@ -220,7 +223,7 @@ repo/
   "serial": "7432284",
   "host": "Relay-685D",
   "received_at": "2026-04-10T16:43:00+08:00",
-  "source_path": "/share/emostore/inbox/7432284.txt",
+  "source_path": "/share/7432284.txt",
   "archive_path": "archive/7432284/2026-04-10T16-43-00+08-00.txt",
   "normalized_path": "normalized/7432284/2026-04-10T16-43-00+08-00.norm.txt",
   "size": 3472,

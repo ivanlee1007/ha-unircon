@@ -243,7 +243,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
   const root = path.resolve(args.root || process.env.EMOS_BACKUP_ROOT || '/share/emostore');
   const repoRoot = path.resolve(args.repo || process.env.EMOS_BACKUP_REPO || path.join(root, 'repo'));
-  const inboxDir = path.join(root, 'inbox');
+  const inboxDir = path.resolve(args.inbox || process.env.EMOS_BACKUP_INBOX || '/share');
   const latestDir = path.join(root, 'latest');
   const archiveRoot = path.join(repoRoot, 'archive');
   const metadataRoot = path.join(repoRoot, 'metadata');
@@ -259,7 +259,8 @@ function main() {
   const doCommit = Boolean(args.commit || process.env.EMOS_BACKUP_COMMIT === '1');
   const dryRun = Boolean(args['dry-run']);
 
-  [root, repoRoot, inboxDir, latestDir, archiveRoot, metadataRoot, normalizedRoot, diffsRoot, runtimeRoot].forEach(ensureDir);
+  [root, repoRoot, latestDir, archiveRoot, metadataRoot, normalizedRoot, diffsRoot, runtimeRoot].forEach(ensureDir);
+  ensureDir(inboxDir);
 
   const bindingMap = bindingMapPath ? loadJsonIfExists(path.resolve(bindingMapPath)) || {} : {};
   const state = loadJsonIfExists(statePath) || { serials: {} };
@@ -400,6 +401,7 @@ function main() {
   console.log(JSON.stringify({
     root,
     repoRoot,
+    inboxDir,
     processed: results.length,
     dryRun,
     commit: commitInfo,

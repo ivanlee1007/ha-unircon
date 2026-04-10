@@ -139,8 +139,10 @@ repo 目前已提供一個 Git 簡版備份 worker：
 最簡單用法：
 
 ```bash
-npm run backup:scan -- --root /share/emostore --commit
+npm run backup:scan -- --root /share/emostore --inbox /share --commit
 ```
+
+說白一點，現在預設假設是：**EMOS 裝置把 FTP backup 丟到 `/share/<SN>.txt`，worker 再從 `/share` 吃 raw landing files，並把整理後的 archive / metadata / diff 寫到 `/share/emostore/repo/`。**
 
 若要用 wrapper 直接跑排程友善版本：
 
