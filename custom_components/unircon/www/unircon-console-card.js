@@ -210,7 +210,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       opened = true;
       this._connected = true;
       this._pushStatus(`[MQTT] Connected to ${url}`);
-      const hosts = this.config.hosts || [];
+      const hosts = this._getHosts();
       const discoveryHost = (b.hostName || "urcon").trim() || "urcon";
       const topics = new Set([
         "ha/pub/+/console/#",
@@ -378,7 +378,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     if (!inp || !inp.value.trim()) return;
     const lines = inp.value.split("\n").map(l => l.trim()).filter(l => l);
     if (lines.length === 0) return;
-    const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
+    const host = this._selectedHost || this._getHosts()[0] || "";
     // Add all lines to history
     this._commandHistory.push(...lines);
     this._historyIdx = this._commandHistory.length;
@@ -420,7 +420,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     }
   }
   _hotkey(cmd) {
-    const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
+    const host = this._selectedHost || this._getHosts()[0] || "";
     this._pushTerminal(`--> ${cmd}`);
     this._hass.callService("unircon", "send_command", this._brokerServiceData({ host, command: cmd, token: this._token })).catch(() => {});
   }
@@ -439,7 +439,7 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._render();
   }
   _reqToken() {
-    const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
+    const host = this._selectedHost || this._getHosts()[0] || "";
     this._hass.callService("unircon", "request_token", this._brokerServiceData({ host })).catch(() => {});
     this._pushStatus("--> Requesting token...");
   }
@@ -676,9 +676,47 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._persistBackupPrefs();
   }
 
+  _getBoundEntryId() {
+    const configured = (this.config.entry_id || this.config.config_entry_id || "").trim();
+    if (configured) return configured;
+    if (!this._hass?.states) return "";
+    const ids = new Set();
+    Object.values(this._hass.states).forEach((st) => {
+      const attrs = st?.attributes || {};
+      if (!attrs.config_entry_id) return;
+      if (attrs.host || (Array.isArray(attrs.synced_hosts) && Array.isArray(attrs.missing_hosts))) {
+        ids.add(attrs.config_entry_id);
+      }
+    });
+    return ids.size === 1 ? Array.from(ids)[0] : "";
+  }
+
+  _stateMatchesBinding(st) {
+    const entryId = this._getBoundEntryId();
+    if (!entryId) return true;
+    const attrs = st?.attributes || {};
+    return attrs.config_entry_id === entryId;
+  }
+
+  _getHosts() {
+    const configured = Array.isArray(this.config.hosts) ? this.config.hosts.filter(Boolean) : [];
+    const hosts = [...configured];
+    const seen = new Set(hosts);
+    if (!this._hass?.states) return hosts;
+    Object.values(this._hass.states).forEach((st) => {
+      if (!this._stateMatchesBinding(st)) return;
+      const host = st?.attributes?.host;
+      if (typeof host !== "string" || !host || seen.has(host)) return;
+      seen.add(host);
+      hosts.push(host);
+    });
+    return hosts;
+  }
+
   _getHostBackupState(host) {
     if (!this._hass?.states || !host) return null;
     return Object.values(this._hass.states).find((st) => {
+      if (!this._stateMatchesBinding(st)) return false;
       const attrs = st?.attributes || {};
       return attrs.host === host && Object.prototype.hasOwnProperty.call(attrs, "last_backup_archive_path");
     }) || null;
@@ -687,6 +725,7 @@ class UNiNUSConsoleCard extends HTMLElement {
   _getBackupSummaryState() {
     if (!this._hass?.states) return null;
     return Object.values(this._hass.states).find((st) => {
+      if (!this._stateMatchesBinding(st)) return false;
       const attrs = st?.attributes || {};
       return Array.isArray(attrs.synced_hosts) && Array.isArray(attrs.missing_hosts);
     }) || null;
@@ -710,7 +749,7 @@ class UNiNUSConsoleCard extends HTMLElement {
 
   _compareBackups() {
     this._readBackupInputs();
-    const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
+    const host = this._selectedHost || this._getHosts()[0] || "";
     if (!host) {
       this._pushStatus("[BACKUP] No host selected for compare");
       return;
@@ -727,7 +766,7 @@ class UNiNUSConsoleCard extends HTMLElement {
 
   _generateRestorePreview() {
     this._readBackupInputs();
-    const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
+    const host = this._selectedHost || this._getHosts()[0] || "";
     if (!host) {
       this._pushStatus("[BACKUP] No host selected for restore preview");
       return;
@@ -745,13 +784,13 @@ class UNiNUSConsoleCard extends HTMLElement {
   _E(v) { return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
   _render() {
-    const hosts = this.config.hosts || [];
+    const hosts = this._getHosts();
     const sel = this._selectedHost || hosts[0] || "";
     const terminalLines = this._terminalLines.slice(-150).join("\n");
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.8.2";
+    const buildVersion = "1.8.4";
     const backupState = this._getHostBackupState(sel);
     const backupAttrs = backupState?.attributes || {};
     const backupSummaryState = this._getBackupSummaryState();
@@ -1017,7 +1056,7 @@ class UNiNUSConsoleCard extends HTMLElement {
           </div>
           <div id="nb-list" style="max-height:240px;overflow-y:auto;font-size:12px">
             ${this._getFilteredNeighbors().map(n => {
-              const inHost = (this.config.hosts||[]).includes(n);
+              const inHost = this._getHosts().includes(n);
               const checked = this._nbChecked.has(n) ? 'checked' : '';
               return `<div class="nb-row" style="display:flex;align-items:center;gap:6px;padding:3px 8px;border-bottom:1px solid var(--divider-color,#f0f0f0)">
                 <input type="checkbox" class="nb-cb" data-host="${this._E(n)}" ${checked} style="flex:0 0 auto">

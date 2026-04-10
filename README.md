@@ -57,6 +57,8 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 
 > 注意：`ha-unircon` 目前除了 `add_extra_js_url()`，也會透過 HA 的 Lovelace resource storage API 確保自己的卡片資源存在，避免 resource 沒持久化時卡片根本不載入。
 
+> 補充：console card 在 `config.hosts` 空白時，現在會自動從 HA 內已建立的 `UNiNUS` entities 反推 host 清單；若有多個 config entry，建議在 card config 補 `entry_id` 來精準綁定。
+
 ## 使用前預先需求
 
 ### 必要
@@ -175,31 +177,31 @@ npm run backup:pipeline
 
 | Entity | 類型 | 說明 |
 |--------|------|------|
-| `sensor.unircon_<host>_console` | sensor | Console 輸出（含 200 行歷史） |
-| `sensor.unircon_<host>_status` | sensor | 設備狀態（online / offline） |
-| `sensor.unircon_<host>_last_seen` | sensor | 最後回報時間（integration 收到訊息） |
-| `sensor.unircon_<host>_firmware` | sensor | 已知韌體版本（從 console 輸出解析） |
-| `text.unircon_<host>_token` | text | 設備序號 |
-| `button.unircon_<host>_enable` | button | Enable 設備 |
-| `button.unircon_<host>_show_version` | button | 顯示版本 |
-| `button.unircon_<host>_show_result` | button | 顯示結果 |
-| `button.unircon_<host>_health_check` | button | 對單台設備執行健康檢查 |
-| `button.unircon_<host>_urcon_neighbors` | button | URCON 鄰居探索 |
-| `button.unircon_<host>_backup` | button | 備份 |
+| `sensor.uninus_<host>_console` | sensor | Console 輸出（含 200 行歷史） |
+| `sensor.uninus_<host>_status` | sensor | 設備狀態（online / offline） |
+| `sensor.uninus_<host>_last_seen` | sensor | 最後回報時間（integration 收到訊息） |
+| `sensor.uninus_<host>_firmware` | sensor | 已知韌體版本（從 console 輸出解析） |
+| `text.uninus_<host>_token` | text | 設備序號 |
+| `button.uninus_<host>_enable` | button | Enable 設備 |
+| `button.uninus_<host>_show_version` | button | 顯示版本 |
+| `button.uninus_<host>_show_result` | button | 顯示結果 |
+| `button.uninus_<host>_health_check` | button | 對單台設備執行健康檢查 |
+| `button.uninus_<host>_urcon_neighbors` | button | URCON 鄰居探索 |
+| `button.uninus_<host>_backup` | button | 備份 |
 
 ### Per-Integration（每個 entry 一組）
 
 | Entity | 類型 | 說明 |
 |--------|------|------|
-| `sensor.unircon_<entry>_fleet_summary` | sensor | 全體設備 online/stale/offline 摘要 |
-| `sensor.unircon_<entry>_backup_summary` | sensor | 全體設備最新 backup sync/change 摘要 |
-| `sensor.unircon_<entry>_audit_log` | sensor | 最新 audit 記錄與最近 20 筆整合層操作 |
+| `sensor.uninus_<entry>_fleet_summary` | sensor | 全體設備 online/stale/offline 摘要 |
+| `sensor.uninus_<entry>_backup_summary` | sensor | 全體設備最新 backup sync/change 摘要 |
+| `sensor.uninus_<entry>_audit_log` | sensor | 最新 audit 記錄與最近 20 筆整合層操作 |
 
 另外每台主機會多一個：
 
 | Entity | 類型 | 說明 |
 |--------|------|------|
-| `sensor.unircon_<host>_backup` | sensor | 最新 backup change_type / snapshot 狀態 |
+| `sensor.uninus_<host>_backup` | sensor | 最新 backup change_type / snapshot 狀態 |
 
 ## Services
 

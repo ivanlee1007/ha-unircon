@@ -106,6 +106,7 @@ class UNiNUSFleetSummarySensor(SensorEntity):
         self._attr_native_value = f"{online}/{len(hosts)} online"
         self._attr_extra_state_attributes = {
             "total_hosts": len(hosts),
+            "config_entry_id": self._entry.entry_id,
             "online_hosts": healthy_hosts + stale_hosts,
             "healthy_hosts": healthy_hosts,
             "stale_hosts": stale_hosts,
@@ -146,6 +147,7 @@ class UNiNUSAuditLogSensor(SensorEntity):
         self._attr_native_value = latest.get("message", "audit")[:255]
         self._attr_extra_state_attributes = {
             "latest": latest,
+            "config_entry_id": self._entry.entry_id,
             "entries": entries[-20:],
             "count": len(entries),
             "pending_approvals": list(data.get(DATA_APPROVALS, {}).values()),
@@ -201,6 +203,7 @@ class UNiNUSBackupSummarySensor(SensorEntity):
         self._attr_native_value = f"{len(synced_hosts)}/{len(hosts)} synced"
         self._attr_extra_state_attributes = {
             "total_hosts": len(hosts),
+            "config_entry_id": self._entry.entry_id,
             "synced_hosts": synced_hosts,
             "changed_hosts": changed_hosts,
             "unchanged_hosts": unchanged_hosts,
@@ -225,6 +228,7 @@ class UNiNUSConsoleSensor(SensorEntity):
         self._attr_extra_state_attributes: dict[str, Any] = {
             "history": [],
             "history_count": 0,
+            "config_entry_id": entry.entry_id,
             "host": host,
         }
 
@@ -304,6 +308,7 @@ class UNiNUSStatusSensor(SensorEntity):
         state = state_map.get(self._host, {})
         last_seen_text = state.get("last_seen")
         self._attr_extra_state_attributes = {
+            "config_entry_id": self._entry.entry_id,
             "host": self._host,
             "last_seen": last_seen_text,
             "last_command": state.get("last_command"),
@@ -354,6 +359,7 @@ class UNiNUSLastSeenSensor(SensorEntity):
         state = data.get(DATA_HOST_STATE, {}).get(self._host, {})
         self._attr_native_value = state.get("last_seen") or "never"
         self._attr_extra_state_attributes = {
+            "config_entry_id": self._entry.entry_id,
             "host": self._host,
             "last_topic": state.get("last_topic"),
             "message_count": state.get("message_count", 0),
@@ -388,6 +394,7 @@ class UNiNUSFirmwareSensor(SensorEntity):
         state = data.get(DATA_HOST_STATE, {}).get(self._host, {})
         self._attr_native_value = state.get("firmware_version") or "unknown"
         self._attr_extra_state_attributes = {
+            "config_entry_id": self._entry.entry_id,
             "host": self._host,
             "device_model": state.get("device_model"),
             "last_health_check_at": state.get("last_health_check_at"),
@@ -420,6 +427,7 @@ class UNiNUSBackupStatusSensor(SensorEntity):
         state = data.get(DATA_HOST_STATE, {}).get(self._host, {})
         self._attr_native_value = state.get("last_backup_change_type") or "no backup"
         self._attr_extra_state_attributes = {
+            "config_entry_id": self._entry.entry_id,
             "host": self._host,
             "serial": state.get("last_backup_serial") or data.get(DATA_TOKENS, {}).get(self._host),
             "last_backup_at": state.get("last_backup_at"),
