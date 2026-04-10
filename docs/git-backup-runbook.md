@@ -160,6 +160,39 @@ repo/
 
 ---
 
+## 驗收口徑
+
+第一版 backup pipeline 的驗收，建議拆成三層判讀：
+
+### 1. Integration / identity 層
+- `run_health_check` / `request_token` 能把 runtime state 拉起來
+- `save_binding_map` 能正確落出 serial -> host / HA device 對應
+
+### 2. Ingestion / worker 層
+- HA 主機上真的有 `/share/<serial>.txt`
+- worker 能吃進 archive / metadata / diff
+- `sync_backup_status` 能把結果匯回 HA
+
+### 3. Device capability 層
+- 這台 firmware 是否真的支援，且已知 manual backup trigger 語法
+- 若 device-side capability 未明，就不要直接把缺檔算成 worker bug
+
+### 建議驗收表達
+
+- 全數閉環：`5/5 synced`
+- 若只剩已知舊韌體例外：`4/5 synced + 1 waived legacy exception`
+
+### 已知例外
+
+- `USS-P130_f5`
+- firmware: `3.62.p5(M-H)T.w3.s8 adv`
+- binding map 正常
+- token / runtime state 正常
+- manual backup trigger 語法未壓實
+- `/share/7868660.txt` 缺席時，應先判成 **legacy firmware exception**
+
+---
+
 ## 建議第一版流程
 
 ### Step 1. EMOS 上傳到 FTP landing path

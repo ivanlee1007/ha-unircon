@@ -92,6 +92,22 @@ unircon.sync_backup_status
 
 把最新 metadata 匯回 HA overlay sensor。
 
+### 自動化後怎麼看結果
+
+建議不要只盯著 `N/M synced` 一個數字。
+
+至少一起看：
+
+- binding map 是否已更新
+- `/share/<serial>.txt` 是否真的落地
+- 缺口是否集中在已知 legacy firmware host
+
+如果唯一缺口是像 `USS-P130_f5 (3.62.p5)` 這種已知舊韌體例外，實務上應寫成：
+
+- `4/5 synced + 1 waived legacy exception`
+
+而不是直接報成 pipeline failure。
+
 若要自動 push：
 
 ```bash

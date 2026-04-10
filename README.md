@@ -146,6 +146,31 @@ npm run backup:scan -- --root /share/emostore --inbox /share --commit
 
 > 實機備註（2026-04-10）：這個假設在 **UB-R5301 / 3.65.3** 已壓成 closed loop，但 **USS-P130_f5 / 3.62.p5(M-H)T** 目前只確認到 binding map / token / runtime state 正常，**尚未確認 manual backup trigger 語法**。因此若 `/share/7868660.txt` 缺席，現階段應先判為 **legacy firmware exception**，不要直接當成 `ha-unircon` pipeline failure。
 
+### Backup 驗收口徑
+
+若 pipeline 跑完後：
+
+- binding map 已正確落檔
+- 多數設備已能產生 `/share/<SN>.txt`
+- worker / `sync_backup_status` 都正常
+- 只剩少數 **已知舊韌體例外** 缺席 landing file
+
+那建議正式把結果表達成：
+
+- **`N/M synced + K waived legacy exception`**
+
+例如目前已壓實的案例可寫成：
+
+- **`4/5 synced + 1 waived legacy exception`**
+
+不要硬把所有缺口都算成 integration failure，不然會把：
+
+- binding map success
+- worker ingestion success
+- device-side manual backup trigger 未明
+
+這三件事混在一起。
+
 若要用 wrapper 直接跑排程友善版本：
 
 ```bash
