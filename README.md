@@ -190,6 +190,8 @@ npm run backup:run
 | `unircon.run_health_check` | 對指定設備做 token/version/clock/result 健康檢查 |
 | `unircon.export_inventory` | 匯出目前 inventory / runtime summary（event） |
 | `unircon.export_binding_candidates` | 從 HA device/entity registry 匯出 binding-map 候選（event） |
+| `unircon.generate_binding_map` | 產出可直接落地的 binding-map JSON（event） |
+| `unircon.save_binding_map` | 直接把 binding-map JSON 存到 HA 主機檔案 |
 | `unircon.generate_deploy` | 生成設備部署檔（結果透過 event 傳回） |
 | `unircon.add_device` | 動態新增一台設備到整合中 |
 
@@ -210,6 +212,28 @@ data:
 - `binding_map`：第一順位建議綁定
 - `unresolved_hosts`：還缺 token 或找不到候選的 host
 - `candidates`：完整候選清單與比對理由
+
+如果你只想拿乾淨 JSON：
+
+```yaml
+service: unircon.generate_binding_map
+data:
+  hosts:
+    - Relay-685D
+```
+
+會 fire：`unircon_binding_map_generated`
+
+如果你要直接落地成檔案：
+
+```yaml
+service: unircon.save_binding_map
+data:
+  path: unircon/binding-map.generated.json
+  overwrite: true
+```
+
+會 fire：`unircon_binding_map_saved`
 
 ## Policy Gate
 

@@ -43,6 +43,16 @@ Last updated: 2026-04-10
 service: unircon.export_binding_candidates
 ```
 
+另外兩個更落地的 service：
+
+```yaml
+service: unircon.generate_binding_map
+```
+
+```yaml
+service: unircon.save_binding_map
+```
+
 可選欄位：
 
 ```yaml
@@ -70,8 +80,70 @@ payload 主要欄位：
 - `entry_id`
 - `hosts`
 - `binding_map`
+- `binding_map_json`
 - `unresolved_hosts`
 - `candidates`
+
+---
+
+## generate_binding_map
+
+如果你不要完整 candidates，只想拿可直接用的 JSON，跑：
+
+```yaml
+service: unircon.generate_binding_map
+data:
+  hosts:
+    - Relay-685D
+```
+
+它會 fire：
+
+```text
+unircon_binding_map_generated
+```
+
+主要欄位：
+
+- `binding_map`
+- `binding_map_json`
+- `resolved`
+- `unresolved_hosts`
+
+這個很適合直接接 automation / notification / clipboard workflow。
+
+---
+
+## save_binding_map
+
+如果你要直接把結果存成檔案：
+
+```yaml
+service: unircon.save_binding_map
+data:
+  path: unircon/binding-map.generated.json
+  overwrite: true
+```
+
+它會 fire：
+
+```text
+unircon_binding_map_saved
+```
+
+預設路徑：
+
+```text
+config/unircon/binding-map.generated.json
+```
+
+規則：
+
+- `path` 可省略
+- 相對路徑會解到 HA `config/` 底下
+- 絕對路徑也可用
+- 預設不覆蓋既有檔案
+- 要覆蓋時明確帶 `overwrite: true`
 
 ---
 
@@ -171,7 +243,7 @@ payload 主要欄位：
 1. 先跑 `unircon.request_token` / `run_health_check`
 2. 再跑 `unircon.export_binding_candidates`
 3. 看 event payload
-4. 把 `binding_map` 存成實際 JSON
+4. 跑 `generate_binding_map` 或 `save_binding_map`
 5. 交給 backup worker 的 `EMOS_BACKUP_BINDING_MAP`
 
 ---

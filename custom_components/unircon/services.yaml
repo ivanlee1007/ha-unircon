@@ -331,6 +331,41 @@ export_binding_candidates:
       selector:
         object:
 
+generate_binding_map:
+  name: Generate binding map
+  description: Build binding-map JSON text from current HA registry matches and emit it as an event.
+  fields:
+    hosts:
+      name: Hosts
+      description: Optional list of hostnames. If omitted, inspects all configured hosts.
+      required: false
+      selector:
+        object:
+
+save_binding_map:
+  name: Save binding map
+  description: Build binding-map JSON text and save it to a file on the HA host.
+  fields:
+    hosts:
+      name: Hosts
+      description: Optional list of hostnames. If omitted, inspects all configured hosts.
+      required: false
+      selector:
+        object:
+    path:
+      name: Output path
+      description: Optional absolute path or config-relative path. Default is config/unircon/binding-map.generated.json.
+      required: false
+      selector:
+        text:
+    overwrite:
+      name: Overwrite existing file
+      description: Allow replacing an existing binding-map file.
+      required: false
+      default: false
+      selector:
+        boolean:
+
 generate_deploy:
   name: Generate deploy config
   description: Generate device deployment configuration text.

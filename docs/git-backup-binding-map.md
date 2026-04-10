@@ -170,6 +170,8 @@ binding map 只是目前最務實的橋接層。
 
 - `docs/ha-binding-candidate-exporter.md`
 - `unircon.export_binding_candidates`
+- `unircon.generate_binding_map`
+- `unircon.save_binding_map`
 
 先從 HA registry 吐出候選，再人工確認。
 

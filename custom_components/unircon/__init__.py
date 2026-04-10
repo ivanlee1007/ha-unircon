@@ -7,6 +7,7 @@ from datetime import timedelta
 import json
 import logging
 import os
+from pathlib import Path
 import re
 from typing import Any
 
@@ -449,6 +450,56 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         candidates.sort(key=lambda item: (-item["score"], item["device_name"] or ""))
         return candidates
+
+    def _build_binding_candidate_export(hosts_list: list[str]) -> dict[str, Any]:
+        binding_map: dict[str, Any] = {}
+        unresolved_hosts: list[dict[str, Any]] = []
+        candidates_by_host: dict[str, Any] = {}
+
+        for host in hosts_list:
+            state = dict(_ensure_host_state(host))
+            token = device_data[DATA_TOKENS].get(host) or state.get("token")
+            candidates = _device_registry_candidates(host, token)
+            candidates_by_host[host] = {
+                "token": token,
+                "runtime_state": state,
+                "candidates": candidates,
+            }
+
+            if token and candidates:
+                binding_map[token] = candidates[0]["suggested_binding"]
+            else:
+                unresolved_hosts.append(
+                    {
+                        "host": host,
+                        "token": token,
+                        "reason": "no token" if not token else "no registry candidate",
+                    }
+                )
+
+        return {
+            "entry_id": entry.entry_id,
+            "hosts": hosts_list,
+            "binding_map": binding_map,
+            "binding_map_json": json.dumps(binding_map, ensure_ascii=False, indent=2, sort_keys=True),
+            "unresolved_hosts": unresolved_hosts,
+            "candidates": candidates_by_host,
+        }
+
+    def _resolve_output_path(path_text: str | None, default_filename: str) -> Path:
+        raw = (path_text or "").strip()
+        if not raw:
+            return Path(hass.config.path("unircon", default_filename))
+        path = Path(raw)
+        if path.is_absolute():
+            return path
+        return Path(hass.config.path(raw))
+
+    def _write_text_file(target_path: Path, content: str, overwrite: bool) -> None:
+        if target_path.exists() and not overwrite:
+            raise FileExistsError(f"Refusing to overwrite existing file: {target_path}")
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text(content, encoding="utf-8")
 
     # Message handler
     def _handle_message_in_loop(topic: str, payload: str) -> None:
@@ -915,48 +966,96 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def handle_export_binding_candidates(call: ServiceCall) -> None:
         hosts_list = call.data.get("hosts", []) or list(device_data[DATA_HOSTS])
-        binding_map: dict[str, Any] = {}
-        unresolved_hosts: list[dict[str, Any]] = []
-        candidates_by_host: dict[str, Any] = {}
-
-        for host in hosts_list:
-            state = dict(_ensure_host_state(host))
-            token = device_data[DATA_TOKENS].get(host) or state.get("token")
-            candidates = _device_registry_candidates(host, token)
-            candidates_by_host[host] = {
-                "token": token,
-                "runtime_state": state,
-                "candidates": candidates,
-            }
-
-            if token and candidates:
-                binding_map[token] = candidates[0]["suggested_binding"]
-            else:
-                unresolved_hosts.append(
-                    {
-                        "host": host,
-                        "token": token,
-                        "reason": "no token" if not token else "no registry candidate",
-                    }
-                )
-
-        hass.bus.async_fire(
-            f"{DOMAIN}_binding_candidates_exported",
-            {
-                "entry_id": entry.entry_id,
-                "hosts": hosts_list,
-                "binding_map": binding_map,
-                "unresolved_hosts": unresolved_hosts,
-                "candidates": candidates_by_host,
-            },
-        )
+        payload = _build_binding_candidate_export(hosts_list)
+        hass.bus.async_fire(f"{DOMAIN}_binding_candidates_exported", payload)
         _append_audit(
             "binding_candidates_export",
             message=f"export binding candidates ({len(hosts_list)} hosts)",
             details={
                 "count": len(hosts_list),
-                "resolved": len(binding_map),
-                "unresolved": len(unresolved_hosts),
+                "resolved": len(payload["binding_map"]),
+                "unresolved": len(payload["unresolved_hosts"]),
+            },
+        )
+
+    async def handle_generate_binding_map(call: ServiceCall) -> None:
+        hosts_list = call.data.get("hosts", []) or list(device_data[DATA_HOSTS])
+        payload = _build_binding_candidate_export(hosts_list)
+        hass.bus.async_fire(
+            f"{DOMAIN}_binding_map_generated",
+            {
+                "entry_id": payload["entry_id"],
+                "hosts": payload["hosts"],
+                "binding_map": payload["binding_map"],
+                "binding_map_json": payload["binding_map_json"],
+                "resolved": len(payload["binding_map"]),
+                "unresolved_hosts": payload["unresolved_hosts"],
+            },
+        )
+        _append_audit(
+            "binding_map_generate",
+            message=f"generate binding map ({len(hosts_list)} hosts)",
+            details={
+                "count": len(hosts_list),
+                "resolved": len(payload["binding_map"]),
+                "unresolved": len(payload["unresolved_hosts"]),
+            },
+        )
+
+    async def handle_save_binding_map(call: ServiceCall) -> None:
+        hosts_list = call.data.get("hosts", []) or list(device_data[DATA_HOSTS])
+        overwrite = bool(call.data.get("overwrite", False))
+        output_path = _resolve_output_path(
+            call.data.get("path"),
+            "binding-map.generated.json",
+        )
+        payload = _build_binding_candidate_export(hosts_list)
+        try:
+            await hass.async_add_executor_job(
+                _write_text_file,
+                output_path,
+                payload["binding_map_json"],
+                overwrite,
+            )
+        except FileExistsError as err:
+            _fire_console_output(f"[ERROR] {err}", "service/save_binding_map")
+            _append_audit(
+                "binding_map_save",
+                status="error",
+                message="save binding map blocked",
+                details={"path": str(output_path), "reason": str(err)},
+            )
+            return
+        except Exception as err:
+            _fire_console_output(f"[ERROR] Failed to save binding map: {err}", "service/save_binding_map")
+            _append_audit(
+                "binding_map_save",
+                status="error",
+                message="save binding map failed",
+                details={"path": str(output_path), "reason": str(err)},
+            )
+            return
+
+        hass.bus.async_fire(
+            f"{DOMAIN}_binding_map_saved",
+            {
+                "entry_id": payload["entry_id"],
+                "hosts": payload["hosts"],
+                "path": str(output_path),
+                "binding_map": payload["binding_map"],
+                "binding_map_json": payload["binding_map_json"],
+                "resolved": len(payload["binding_map"]),
+                "unresolved_hosts": payload["unresolved_hosts"],
+            },
+        )
+        _append_audit(
+            "binding_map_save",
+            message=f"saved binding map to {output_path}",
+            details={
+                "path": str(output_path),
+                "count": len(hosts_list),
+                "resolved": len(payload["binding_map"]),
+                "unresolved": len(payload["unresolved_hosts"]),
             },
         )
 
@@ -1005,6 +1104,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, "run_health_check", handle_run_health_check)
         hass.services.async_register(DOMAIN, "export_inventory", handle_export_inventory)
         hass.services.async_register(DOMAIN, "export_binding_candidates", handle_export_binding_candidates)
+        hass.services.async_register(DOMAIN, "generate_binding_map", handle_generate_binding_map)
+        hass.services.async_register(DOMAIN, "save_binding_map", handle_save_binding_map)
         hass.services.async_register(DOMAIN, "generate_deploy", handle_generate_deploy)
         hass.services.async_register(DOMAIN, "add_device", handle_add_device)
 
@@ -1039,6 +1140,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "run_health_check",
             "export_inventory",
             "export_binding_candidates",
+            "generate_binding_map",
+            "save_binding_map",
             "generate_deploy",
             "add_device",
         ]:
