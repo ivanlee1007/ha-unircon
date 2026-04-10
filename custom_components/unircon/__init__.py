@@ -394,17 +394,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         state = _ensure_host_state(host)
         state["last_health_check_at"] = _now_iso()
 
-    def _normalize_lookup(value: str | None) -> str:
+    def _normalize_lookup(value: Any) -> str:
         if not value:
             return ""
-        return re.sub(r"[^a-z0-9]+", "", value.lower())
+        return re.sub(r"[^a-z0-9]+", "", str(value).lower())
 
-    def _device_registry_candidates(host: str, token: str | None) -> list[dict[str, Any]]:
+    def _device_registry_candidates(host: str, token: Any) -> list[dict[str, Any]]:
         device_registry = dr.async_get(hass)
         entity_registry = er.async_get(hass)
         state = _ensure_host_state(host)
         host_norm = _normalize_lookup(host)
-        token_norm = _normalize_lookup(token)
+        token_text = str(token).strip() if token is not None else ""
+        token_norm = _normalize_lookup(token_text)
         model_norm = _normalize_lookup(state.get("device_model"))
         firmware_version = state.get("firmware_version")
 
@@ -425,12 +426,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             normalized_names = {_normalize_lookup(name) for name in names if name}
 
             mqtt_identifier = None
-            if token and token in identifier_values:
-                mqtt_identifier = token
+            if token_text and token_text in identifier_values:
+                mqtt_identifier = token_text
                 score += 100
                 reasons.append("identifier matches token")
-            elif token and token in connection_values:
-                mqtt_identifier = token
+            elif token_text and token_text in connection_values:
+                mqtt_identifier = token_text
                 score += 90
                 reasons.append("connection matches token")
 
@@ -477,7 +478,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     "score": score,
                     "reasons": reasons,
                     "host": host,
-                    "token": token,
+                    "token": token_text or None,
                     "ha_device_id": device.id,
                     "device_name": getattr(device, "name_by_user", None) or getattr(device, "name", None),
                     "manufacturer": manufacturer,
@@ -513,10 +514,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         for host in hosts_list:
             state = dict(_ensure_host_state(host))
-            token = device_data[DATA_TOKENS].get(host) or state.get("token")
+            raw_token = device_data[DATA_TOKENS].get(host) or state.get("token")
+            token = str(raw_token).strip() if raw_token is not None else ""
             candidates = _device_registry_candidates(host, token)
             candidates_by_host[host] = {
-                "token": token,
+                "token": token or None,
                 "runtime_state": state,
                 "candidates": candidates,
             }
@@ -837,8 +839,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         if not token and isinstance(data.get("data"), dict):
                             token = data["data"].get("token")
                         if token:
-                            device_data[DATA_TOKENS][host] = token
-                            _ensure_host_state(host)["token"] = token
+                            token_text = str(token).strip()
+                            device_data[DATA_TOKENS][host] = token_text
+                            _ensure_host_state(host)["token"] = token_text
 
                     _emit_console_event(
                         {"host": host, "topic": topic, "data": data}
