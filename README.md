@@ -47,6 +47,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/emos-backup-versioning-architecture.md`：EMOS 備份落地到 HA 同機 FTP 後，如何接 snapshot / diff / Git 版本控制
 - `docs/git-backup-runbook.md`：Git 簡版備份版控的實作 runbook，含目錄、檔名、metadata、commit 規則
 - `docs/git-backup-worker.md`：starter worker 的 CLI 用法與目前能力邊界
+- `docs/git-backup-automation.md`：在 HA 主機上用 shell / cron / Node-RED / n8n 跑 worker 的建議做法
 
 ## 使用前預先需求
 
@@ -104,6 +105,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/emos-backup-versioning-architecture.md`
 - `docs/git-backup-runbook.md`
 - `docs/git-backup-worker.md`
+- `docs/git-backup-automation.md`
 
 ### 內建 starter worker
 
@@ -118,6 +120,14 @@ repo 目前已提供一個 Git 簡版備份 worker：
 ```bash
 npm run backup:scan -- --root /share/emostore --commit
 ```
+
+若要用 wrapper 直接跑排程友善版本：
+
+```bash
+npm run backup:run
+```
+
+更多實際排程方式見：`docs/git-backup-automation.md`
 
 ## 安裝
 

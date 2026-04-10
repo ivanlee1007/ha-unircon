@@ -4,6 +4,10 @@ Last updated: 2026-04-10
 
 `tools/emos_backup_worker.mjs` 是這個 repo 目前的 **starter worker**。
 
+如果你要的是「可直接排程的入口」，搭配：
+
+- `tools/run_emos_backup_scan.sh`
+
 定位很明確：
 
 - 掃描 FTP landing inbox
