@@ -199,8 +199,19 @@ backup(7432284): snapshot 2026-04-10T17:02:00+08:00
 - 沒有真正語意 parser
 - `change_type` 目前是 heuristic
 - 還沒直接回寫 HA / `ha-unircon`
+- **不能替設備補出不存在的 landing file**，也就是說，如果某台舊韌體設備根本還沒有成功把 backup 丟到 `/share/<serial>.txt`，worker 不會也不該把它包裝成 synced
 
 這是刻意的，先把第一版做穩。
+
+### 已知 legacy exception
+
+截至 2026-04-10，`USS-P130_f5`（`3.62.p5(M-H)T.w3.s8 adv`）已確認：
+
+- binding map 正常
+- runtime token 正常
+- 但 manual backup trigger 語法仍未壓實
+
+因此 `7868660.txt` 未落到 `/share/` 時，應先判成 **legacy firmware exception / capability gap**，不是 worker ingestion bug。
 
 ---
 

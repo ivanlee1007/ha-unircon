@@ -144,6 +144,8 @@ npm run backup:scan -- --root /share/emostore --inbox /share --commit
 
 說白一點，現在預設假設是：**EMOS 裝置把 FTP backup 丟到 `/share/<SN>.txt`，worker 再從 `/share` 吃 raw landing files，並把整理後的 archive / metadata / diff 寫到 `/share/emostore/repo/`。**
 
+> 實機備註（2026-04-10）：這個假設在 **UB-R5301 / 3.65.3** 已壓成 closed loop，但 **USS-P130_f5 / 3.62.p5(M-H)T** 目前只確認到 binding map / token / runtime state 正常，**尚未確認 manual backup trigger 語法**。因此若 `/share/7868660.txt` 缺席，現階段應先判為 **legacy firmware exception**，不要直接當成 `ha-unircon` pipeline failure。
+
 若要用 wrapper 直接跑排程友善版本：
 
 ```bash

@@ -180,6 +180,34 @@ unircon/binding-map.generated.json
 
 ---
 
+## Legacy firmware exception
+
+`save_binding_map` 成功，不等於每台設備都一定能產生 `/share/<serial>.txt`。
+
+已知實機案例：
+
+- `USS-P130_f5`
+- firmware: `3.62.p5(M-H)T.w3.s8 adv`
+- 狀態：token / binding map / runtime state 都正常
+- 但目前從既有 MQTT remote console path 仍**無法確認 manual backup trigger 語法**
+
+所以如果 pipeline 跑完後出現：
+
+- binding map 已有該 host
+- backup summary 仍是 `4/5 synced`
+- 唯一缺口是 `USS-P130_f5`
+- HA 主機沒有 `/share/7868660.txt`
+
+目前應優先解讀為：
+
+- **legacy firmware capability gap / exception**
+- 不是 `save_binding_map` 壞掉
+- 也不一定是 backup worker 壞掉
+
+實務上可先把這類 host 標成 **waived legacy exception**，主線驗證以其餘可閉環機型為準。
+
+---
+
 ## 為什麼這條線合理
 
 因為責任切得很乾淨：
