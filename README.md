@@ -44,6 +44,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 ## Design Notes
 
 - `docs/ha-mqtt-overlay-strategy.md`：HA 原生 MQTT 與 `ha-unircon` 的分層策略，避免重複造輪子
+- `docs/emos-backup-versioning-architecture.md`：EMOS 備份落地到 HA 同機 FTP 後，如何接 snapshot / diff / Git 版本控制
 
 ## 安裝
 
