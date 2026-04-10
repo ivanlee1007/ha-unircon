@@ -8,12 +8,12 @@ from datetime import timedelta
 import json
 import logging
 import os
-from pathlib import Path
 import re
 from typing import Any
 
 from homeassistant.components import frontend
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.lovelace.const import CONF_RESOURCE_TYPE_WS, LOVELACE_DATA, MODE_STORAGE
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -57,6 +57,44 @@ DATA_TOKENS = "tokens"
 DATA_CONSOLE_HISTORY = "console_history"
 
 
+async def _async_ensure_lovelace_resource(hass: HomeAssistant, resource_url: str) -> None:
+    for _attempt in range(12):
+        lovelace_data = hass.data.get(LOVELACE_DATA)
+        if lovelace_data is None:
+            await asyncio.sleep(5)
+            continue
+
+        if lovelace_data.resource_mode != MODE_STORAGE:
+            _LOGGER.info("Skipped unircon resource persistence because Lovelace is not in storage mode")
+            return
+
+        resources = lovelace_data.resources
+        await resources.async_get_info()
+        items = list(resources.async_items() or [])
+
+        target_item = None
+        for item in items:
+            url = str(item.get("url") or "")
+            if url == resource_url or CARD_STATIC_URL in url or "unircon-console-card.js" in url:
+                target_item = item
+                break
+
+        if target_item is None:
+            await resources.async_create_item({"url": resource_url, CONF_RESOURCE_TYPE_WS: "module"})
+            _LOGGER.info("Registered unircon card resource in Lovelace storage: %s", resource_url)
+            return
+
+        if target_item.get("url") != resource_url or target_item.get("type") != "module":
+            await resources.async_update_item(
+                target_item["id"],
+                {"url": resource_url, CONF_RESOURCE_TYPE_WS: "module"},
+            )
+            _LOGGER.info("Updated unircon card resource in Lovelace storage: %s", resource_url)
+        return
+
+    _LOGGER.warning("Lovelace data not ready, skipped unircon resource persistence")
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up UNiNUS Remote Console domain data and dashboard card."""
     domain_data = hass.data.setdefault(DOMAIN, {})
@@ -75,6 +113,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         frontend.add_extra_js_url(hass, domain_data.get("card_resource_url", CARD_RESOURCE_URL))
         domain_data["card_resource_registered"] = True
         _LOGGER.info("Auto-loaded unircon card resource: %s", domain_data.get("card_resource_url", CARD_RESOURCE_URL))
+
+    hass.async_create_task(
+        _async_ensure_lovelace_resource(
+            hass, domain_data.get("card_resource_url", CARD_RESOURCE_URL)
+        )
+    )
 
     return True
 

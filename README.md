@@ -55,6 +55,8 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/ha-binding-backup-pipeline.md`：把 `save_binding_map` 和 backup worker 串成單條可排程流程
 - `docs/ha-backup-compare-restore.md`：snapshot compare 與 restore preview 的 backend workflow
 
+> 注意：`ha-unircon` 目前除了 `add_extra_js_url()`，也會透過 HA 的 Lovelace resource storage API 確保自己的卡片資源存在，避免 resource 沒持久化時卡片根本不載入。
+
 ## 使用前預先需求
 
 ### 必要
