@@ -38,11 +38,21 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._activeSiteName = "";
     this._cmdQueue = [];
     this._waitingReply = false;
+    this._backup = {
+      metadataRoot: "/share/emostore/repo/metadata",
+      currentSnapshot: "",
+      previousSnapshot: "",
+      restoreSnapshot: "",
+    };
+    this._backupSyncInfo = null;
+    this._backupCompareByHost = {};
+    this._restorePreviewByHost = {};
     // Restore broker settings from localStorage
     try {
       const s = localStorage.getItem("unircon_broker");
       if (s) this._broker = JSON.parse(s);
     } catch(_) {}
+    this._loadBackupPrefs();
     this._loadSites();
     this._broker = this._broker || {
       host: (this.config.broker && this.config.broker.host) || "",
@@ -108,6 +118,25 @@ class UNiNUSConsoleCard extends HTMLElement {
         if (statusLine) this._pushStatus(statusLine);
         this._render();
       }, "unircon_console");
+      this._hass.connection.subscribeEvents((ev) => {
+        this._backupSyncInfo = ev.data || null;
+        const count = ev.data?.synced_count ?? 0;
+        const total = (ev.data?.hosts || []).length;
+        this._pushStatus(`[BACKUP] Sync completed: ${count}/${total} hosts`);
+        this._render();
+      }, "unircon_backup_status");
+      this._hass.connection.subscribeEvents((ev) => {
+        const data = ev.data || {};
+        if (data.host) this._backupCompareByHost[data.host] = data;
+        this._pushStatus(`[BACKUP] Compare ready for ${data.host || "?"}: ${data.previous_snapshot || "?"} -> ${data.current_snapshot || "?"}`);
+        this._render();
+      }, "unircon_backup_compare");
+      this._hass.connection.subscribeEvents((ev) => {
+        const data = ev.data || {};
+        if (data.host) this._restorePreviewByHost[data.host] = data;
+        this._pushStatus(`[BACKUP] Restore preview ready for ${data.host || "?"}: ${data.target_snapshot || "latest"}`);
+        this._render();
+      }, "unircon_restore_preview_generated");
     }
   }
 
@@ -619,6 +648,99 @@ class UNiNUSConsoleCard extends HTMLElement {
     this._render();
   }
 
+  // ===== Backup workflow =====
+  _loadBackupPrefs() {
+    try {
+      const raw = localStorage.getItem("unircon_backup_prefs");
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      this._backup = {
+        ...this._backup,
+        ...(data || {}),
+      };
+    } catch(_) {}
+  }
+
+  _persistBackupPrefs() {
+    try {
+      localStorage.setItem("unircon_backup_prefs", JSON.stringify(this._backup));
+    } catch(_) {}
+  }
+
+  _readBackupInputs() {
+    const q = (id, fallback = "") => this.querySelector(id)?.value ?? fallback;
+    this._backup.metadataRoot = q("#bk-mroot", this._backup.metadataRoot || "").trim() || "/share/emostore/repo/metadata";
+    this._backup.currentSnapshot = q("#bk-current", this._backup.currentSnapshot || "").trim();
+    this._backup.previousSnapshot = q("#bk-prev", this._backup.previousSnapshot || "").trim();
+    this._backup.restoreSnapshot = q("#bk-restore", this._backup.restoreSnapshot || "").trim();
+    this._persistBackupPrefs();
+  }
+
+  _getHostBackupState(host) {
+    if (!this._hass?.states || !host) return null;
+    return Object.values(this._hass.states).find((st) => {
+      const attrs = st?.attributes || {};
+      return attrs.host === host && Object.prototype.hasOwnProperty.call(attrs, "last_backup_archive_path");
+    }) || null;
+  }
+
+  _getBackupSummaryState() {
+    if (!this._hass?.states) return null;
+    return Object.values(this._hass.states).find((st) => {
+      const attrs = st?.attributes || {};
+      return Array.isArray(attrs.synced_hosts) && Array.isArray(attrs.missing_hosts);
+    }) || null;
+  }
+
+  _fmtJson(data) {
+    try {
+      return JSON.stringify(data || {}, null, 2);
+    } catch (_) {
+      return String(data ?? "");
+    }
+  }
+
+  _syncBackupStatus() {
+    this._readBackupInputs();
+    this._hass.callService("unircon", "sync_backup_status", {
+      metadata_root: this._backup.metadataRoot,
+    }).catch(() => {});
+    this._pushStatus(`[BACKUP] Syncing backup metadata from ${this._backup.metadataRoot}`);
+  }
+
+  _compareBackups() {
+    this._readBackupInputs();
+    const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
+    if (!host) {
+      this._pushStatus("[BACKUP] No host selected for compare");
+      return;
+    }
+    const data = {
+      host,
+      metadata_root: this._backup.metadataRoot,
+    };
+    if (this._backup.currentSnapshot) data.current_snapshot = this._backup.currentSnapshot;
+    if (this._backup.previousSnapshot) data.previous_snapshot = this._backup.previousSnapshot;
+    this._hass.callService("unircon", "compare_backups", data).catch(() => {});
+    this._pushStatus(`[BACKUP] Comparing snapshots for ${host}`);
+  }
+
+  _generateRestorePreview() {
+    this._readBackupInputs();
+    const host = this._selectedHost || (this.config.hosts && this.config.hosts[0]) || "";
+    if (!host) {
+      this._pushStatus("[BACKUP] No host selected for restore preview");
+      return;
+    }
+    const data = {
+      host,
+      metadata_root: this._backup.metadataRoot,
+    };
+    if (this._backup.restoreSnapshot) data.snapshot = this._backup.restoreSnapshot;
+    this._hass.callService("unircon", "generate_restore_preview", data).catch(() => {});
+    this._pushStatus(`[BACKUP] Generating restore preview for ${host}`);
+  }
+
   // ===== Rendering =====
   _E(v) { return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
@@ -629,7 +751,13 @@ class UNiNUSConsoleCard extends HTMLElement {
     const statusLines = this._statusLines.slice(-150).join("\n");
     const connColor = this._connected ? "#4caf50" : "#f44336";
     const connLabel = this._connected ? "已連線" : "未連線";
-    const buildVersion = "1.1.3";
+    const buildVersion = "1.8.0";
+    const backupState = this._getHostBackupState(sel);
+    const backupAttrs = backupState?.attributes || {};
+    const backupSummaryState = this._getBackupSummaryState();
+    const backupSummary = backupSummaryState?.attributes || {};
+    const compareData = this._backupCompareByHost[sel] || null;
+    const restoreData = this._restorePreviewByHost[sel] || null;
 
     this.innerHTML = `
     <style>
@@ -683,7 +811,7 @@ class UNiNUSConsoleCard extends HTMLElement {
       /* MQTT settings */
       .msf .row{margin:5px 0;display:flex;align-items:center;gap:8px}
       .msf .row label{font-size:13px;min-width:100px;color:var(--secondary-text-color,#666)}
-      .msf .row input{height:26px;padding:3px 6px;font-size:13px;border:1px solid var(--divider-color,#ccc);border-radius:4px;flex:1}
+      .msf .row input,.msf .row select{height:26px;padding:3px 6px;font-size:13px;border:1px solid var(--divider-color,#ccc);border-radius:4px;flex:1}
     </style>
     <ha-card header="${this._E(`${this.config.title||"UNiNUS Console"} v${buildVersion}`)}">
       <div class="uh">
@@ -696,6 +824,7 @@ class UNiNUSConsoleCard extends HTMLElement {
         <button class="${this._tab==='console'?'on':''}" data-tab="console">🖥️ 主控台</button>
         <button class="${this._tab==='deploy'?'on':''}" data-tab="deploy">📋 部署檔</button>
         <button class="${this._tab==='batch'?'on':''}" data-tab="batch">📦 批次處理</button>
+        <button class="${this._tab==='backup'?'on':''}" data-tab="backup">🗂️ 備份</button>
         <button class="${this._tab==='mqtt'?'on':''}" data-tab="mqtt">📡 MQTT</button>
       </div>
 
@@ -783,6 +912,59 @@ class UNiNUSConsoleCard extends HTMLElement {
           <button id="uc-batch-clear" style="background:#d9534f;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer">清空</button>
         </div>
         <div id="uc-batch-status" style="margin-top:6px;font-size:12px;color:var(--secondary-text-color,#888)"></div>
+      </div>
+
+      <!-- Tab: Backup -->
+      <div class="tp ${this._tab==='backup'?'on':''}" id="tp-backup">
+        <div class="msf">
+          <div class="row"><label>Host</label><select id="bk-host">${hosts.map(h=>`<option value="${this._E(h)}" ${h===sel?"selected":""}>${this._E(h)}</option>`).join("")}</select></div>
+          <div class="row"><label>Metadata Root</label><input id="bk-mroot" value="${this._E(this._backup.metadataRoot)}" placeholder="/share/emostore/repo/metadata"/></div>
+          <div style="display:flex;gap:6px;margin:8px 0 10px 0">
+            <button id="bk-sync" style="padding:5px 12px;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer">同步狀態</button>
+            <button id="bk-compare" style="padding:5px 12px;background:var(--primary-color,#03a9f4);color:#fff;border:none;border-radius:4px;cursor:pointer">比較快照</button>
+            <button id="bk-restore-preview" style="padding:5px 12px;background:#ff9800;color:#fff;border:none;border-radius:4px;cursor:pointer">還原預覽</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start">
+          <div style="border:1px solid var(--divider-color,#ddd);border-radius:6px;padding:10px;background:rgba(255,255,255,.04)">
+            <div class="uclbl">目前 Backup 狀態</div>
+            <div style="font-size:13px;line-height:1.7">
+              <div><b>summary:</b> ${this._E(backupSummaryState?.state || "unknown")}</div>
+              <div><b>host state:</b> ${this._E(backupState?.state || "no backup")}</div>
+              <div><b>last backup:</b> ${this._E(backupAttrs.last_backup_at || "-")}</div>
+              <div><b>changed:</b> ${this._E(backupAttrs.last_backup_changed ?? "-")}</div>
+              <div><b>sha256:</b> <span style="font-family:monospace">${this._E(backupAttrs.last_backup_sha256 || "-")}</span></div>
+              <div><b>archive:</b> <span style="font-family:monospace">${this._E(backupAttrs.last_backup_archive_path || "-")}</span></div>
+              <div><b>sync:</b> ${this._E(backupAttrs.last_backup_sync_at || "-")}</div>
+            </div>
+            <hr style="border:none;border-top:1px dashed var(--divider-color,#ddd);margin:10px 0"/>
+            <div class="uclbl">Fleet 摘要</div>
+            <div style="font-size:12px;line-height:1.7">
+              <div><b>synced:</b> ${this._E((backupSummary.synced_hosts || []).join(", ") || "-")}</div>
+              <div><b>missing:</b> ${this._E((backupSummary.missing_hosts || []).join(", ") || "-")}</div>
+              <div><b>changed hosts:</b> ${this._E((backupSummary.changed_hosts || []).join(", ") || "-")}</div>
+            </div>
+          </div>
+          <div style="border:1px solid var(--divider-color,#ddd);border-radius:6px;padding:10px;background:rgba(255,255,255,.04)">
+            <div class="uclbl">最近一次 sync event</div>
+            <textarea readonly style="width:100%;height:180px;font-family:monospace;font-size:12px;box-sizing:border-box">${this._E(this._fmtJson(this._backupSyncInfo || {}))}</textarea>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;align-items:start">
+          <div style="border:1px solid var(--divider-color,#ddd);border-radius:6px;padding:10px;background:rgba(255,255,255,.04)">
+            <div class="uclbl">Compare</div>
+            <div class="row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><label style="min-width:80px">Current</label><input id="bk-current" value="${this._E(this._backup.currentSnapshot)}" placeholder="留空 = 最新" style="flex:1;height:28px;padding:4px 6px"/></div>
+            <div class="row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><label style="min-width:80px">Previous</label><input id="bk-prev" value="${this._E(this._backup.previousSnapshot)}" placeholder="留空 = 上一版" style="flex:1;height:28px;padding:4px 6px"/></div>
+            <div style="font-size:12px;color:var(--secondary-text-color,#888);margin-bottom:6px">${this._E(compareData ? `${compareData.previous_snapshot || "?"} → ${compareData.current_snapshot || "?"} | +${compareData.line_additions || 0} / -${compareData.line_removals || 0}` : "尚未執行 compare")}</div>
+            <textarea readonly style="width:100%;height:260px;font-family:monospace;font-size:12px;box-sizing:border-box">${this._E(compareData?.diff_preview || "")}</textarea>
+          </div>
+          <div style="border:1px solid var(--divider-color,#ddd);border-radius:6px;padding:10px;background:rgba(255,255,255,.04)">
+            <div class="uclbl">Restore Preview</div>
+            <div class="row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><label style="min-width:80px">Snapshot</label><input id="bk-restore" value="${this._E(this._backup.restoreSnapshot)}" placeholder="留空 = 最新" style="flex:1;height:28px;padding:4px 6px"/></div>
+            <div style="font-size:12px;color:var(--secondary-text-color,#888);margin-bottom:6px">${this._E(restoreData ? `${restoreData.target_snapshot || "latest"} | policy gate=${restoreData.required_policy_gate}` : "尚未產生 restore preview")}</div>
+            <textarea readonly style="width:100%;height:260px;font-family:monospace;font-size:12px;box-sizing:border-box">${this._E(this._fmtJson(restoreData || {}))}</textarea>
+          </div>
+        </div>
       </div>
 
       <!-- Tab: MQTT (Phase 5) -->
@@ -922,6 +1104,24 @@ class UNiNUSConsoleCard extends HTMLElement {
       const h = this.querySelector("#uc-batch-hosts"); if (h) h.value = "";
       const c = this.querySelector("#uc-batch-cmds"); if (c) c.value = "";
     });
+
+    // Backup tab
+    const bkHost = this.querySelector("#bk-host");
+    if (bkHost) bkHost.addEventListener("change", (e) => { this._selectedHost = e.target.value; this._render(); });
+    const bkRoot = this.querySelector("#bk-mroot");
+    if (bkRoot) bkRoot.addEventListener("change", () => this._readBackupInputs());
+    const bkCurrent = this.querySelector("#bk-current");
+    if (bkCurrent) bkCurrent.addEventListener("change", () => this._readBackupInputs());
+    const bkPrev = this.querySelector("#bk-prev");
+    if (bkPrev) bkPrev.addEventListener("change", () => this._readBackupInputs());
+    const bkRestore = this.querySelector("#bk-restore");
+    if (bkRestore) bkRestore.addEventListener("change", () => this._readBackupInputs());
+    const bkSync = this.querySelector("#bk-sync");
+    if (bkSync) bkSync.addEventListener("click", () => this._syncBackupStatus());
+    const bkCompare = this.querySelector("#bk-compare");
+    if (bkCompare) bkCompare.addEventListener("click", () => this._compareBackups());
+    const bkRestorePreview = this.querySelector("#bk-restore-preview");
+    if (bkRestorePreview) bkRestorePreview.addEventListener("click", () => this._generateRestorePreview());
 
     // MQTT settings (Phase 5)
     const bindBrokerField = (selector, key, parser = (v) => v) => {

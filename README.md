@@ -19,10 +19,11 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - **Token Text**：設備序號顯示與手動設定
 - **Command Buttons**：Enable / Show Version / URCON Neighbors / Backup 等快按
 - **Services**：下指令、批次處理、MQTT 測試發佈、鄰居探索、健康檢查、binding map 生成、backup status 同步、snapshot compare、restore preview、inventory 匯出、部署檔生成、動態新增設備
-- **Custom Card**（v2）：四個分頁
+- **Custom Card**（v3）：五個分頁
   - 🖥️ **主控台**：即時串流 + 指令輸入 + Hot Keys + 歷史命令 ↑↓
   - 📋 **部署檔**：表單填寫 → 生成 / 複製 / 下載 deploy config
   - 📦 **批次處理**：多主機 × 多指令一鍵執行
+  - 🗂️ **備份**：sync backup status / compare snapshots / restore preview
   - 📡 **MQTT**：Broker 設定 + 測試發佈 + URCON 鄰居探索（可一鍵加入主機清單）
 
 ## 這個 integration 適合做什麼
