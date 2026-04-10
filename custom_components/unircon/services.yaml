@@ -309,6 +309,30 @@ run_health_check:
           step: 0.5
           unit_of_measurement: seconds
 
+sync_backup_status:
+  name: Sync backup status
+  description: Read latest backup metadata files from the HA host and import them into unircon runtime state.
+  fields:
+    hosts:
+      name: Hosts
+      description: Optional list of hostnames. If omitted, syncs all configured hosts.
+      required: false
+      selector:
+        object:
+    metadata_root:
+      name: Metadata root
+      description: Optional absolute path or config-relative path to the worker metadata directory.
+      required: false
+      selector:
+        text:
+    clear_missing:
+      name: Clear missing hosts
+      description: Clear cached backup fields for hosts that have no matching metadata file.
+      required: false
+      default: false
+      selector:
+        boolean:
+
 export_inventory:
   name: Export inventory
   description: Emit the current host inventory and runtime summary as an event.

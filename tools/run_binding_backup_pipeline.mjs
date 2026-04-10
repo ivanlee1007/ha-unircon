@@ -123,6 +123,12 @@ async function main() {
     'PIPELINE_BINDING_MAP_SERVICE_PATH',
     'unircon/binding-map.generated.json',
   );
+  const metadataRoot = readValue(
+    args,
+    'metadata-root',
+    'PIPELINE_METADATA_ROOT',
+    '/share/emostore/repo/metadata',
+  );
   const healthWaitSeconds = Number(
     readValue(args, 'health-wait-seconds', 'PIPELINE_HEALTH_WAIT_SECONDS', '15'),
   );
@@ -131,6 +137,7 @@ async function main() {
   );
   const skipHealthCheck = readFlag(args, 'skip-health-check', 'PIPELINE_SKIP_HEALTH_CHECK', false);
   const overwriteBindingMap = readFlag(args, 'overwrite-binding-map', 'PIPELINE_OVERWRITE_BINDING_MAP', true);
+  const skipBackupStatusSync = readFlag(args, 'skip-backup-status-sync', 'PIPELINE_SKIP_BACKUP_STATUS_SYNC', false);
   const dryRun = readFlag(args, 'dry-run', 'PIPELINE_DRY_RUN', false);
 
   if (!haUrlRaw || !token) {
@@ -205,6 +212,22 @@ async function main() {
     },
   });
 
+  if (!skipBackupStatusSync) {
+    log('calling HA service unircon.sync_backup_status');
+    await callHaService({
+      haUrl,
+      token,
+      domain: 'unircon',
+      service: 'sync_backup_status',
+      data: {
+        ...serviceHosts,
+        metadata_root: metadataRoot,
+      },
+    });
+  } else {
+    log('skip backup status sync');
+  }
+
   console.log(
     JSON.stringify(
       {
@@ -212,6 +235,7 @@ async function main() {
         started_at: startedAt,
         finished_at: new Date().toISOString(),
         binding_map_path: bindingMapPath,
+        metadata_root: metadataRoot,
         hosts,
       },
       null,

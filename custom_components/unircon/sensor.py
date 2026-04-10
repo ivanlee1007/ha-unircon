@@ -37,11 +37,13 @@ async def async_setup_entry(
     entities = []
     entities.append(UNiNUSFleetSummarySensor(hass, entry))
     entities.append(UNiNUSAuditLogSensor(hass, entry))
+    entities.append(UNiNUSBackupSummarySensor(hass, entry))
     for host in hosts:
         entities.append(UNiNUSConsoleSensor(hass, entry, host))
         entities.append(UNiNUSStatusSensor(hass, entry, host))
         entities.append(UNiNUSLastSeenSensor(hass, entry, host))
         entities.append(UNiNUSFirmwareSensor(hass, entry, host))
+        entities.append(UNiNUSBackupStatusSensor(hass, entry, host))
 
     async_add_entities(entities, update_before_add=True)
 
@@ -61,7 +63,7 @@ class UNiNUSFleetSummarySensor(SensorEntity):
 
     @callback
     def _handle_event(self, _event) -> None:
-        self.async_write_ha_state()
+        self.async_schedule_update_ha_state(True)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self._hass.bus.async_listen(f"{DOMAIN}_console", self._handle_event))
@@ -129,10 +131,11 @@ class UNiNUSAuditLogSensor(SensorEntity):
 
     @callback
     def _handle_audit(self, _event) -> None:
-        self.async_write_ha_state()
+        self.async_schedule_update_ha_state(True)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self._hass.bus.async_listen(f"{DOMAIN}_audit", self._handle_audit))
+        self.async_on_remove(self._hass.bus.async_listen(f"{DOMAIN}_backup_status", self._handle_audit))
 
     async def async_update(self) -> None:
         data = self._hass.data[DOMAIN][self._entry.entry_id]
@@ -146,6 +149,63 @@ class UNiNUSAuditLogSensor(SensorEntity):
             "entries": entries[-20:],
             "count": len(entries),
             "pending_approvals": list(data.get(DATA_APPROVALS, {}).values()),
+        }
+
+
+class UNiNUSBackupSummarySensor(SensorEntity):
+    """Summarize latest imported backup state across the fleet."""
+
+    _attr_icon = "mdi:source-commit"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        self._hass = hass
+        self._entry = entry
+        self._attr_name = f"UNiNUS {entry.title} Backup Summary"
+        self._attr_unique_id = f"unircon_{entry.entry_id[:8]}_backup_summary"
+        self._attr_native_value = "0/0 synced"
+        self._attr_extra_state_attributes = {}
+
+    @callback
+    def _handle_event(self, _event) -> None:
+        self.async_schedule_update_ha_state(True)
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._hass.bus.async_listen(f"{DOMAIN}_backup_status", self._handle_event))
+        self.async_on_remove(self._hass.bus.async_listen(f"{DOMAIN}_audit", self._handle_event))
+
+    async def async_update(self) -> None:
+        data = self._hass.data[DOMAIN][self._entry.entry_id]
+        hosts = data.get("hosts", [])
+        state_map = data.get(DATA_HOST_STATE, {})
+
+        synced_hosts: list[str] = []
+        changed_hosts: list[str] = []
+        unchanged_hosts: list[str] = []
+        missing_hosts: list[str] = []
+        latest_backup_at = None
+
+        for host in hosts:
+            state = state_map.get(host, {})
+            backup_at = state.get("last_backup_at")
+            if not backup_at:
+                missing_hosts.append(host)
+                continue
+            synced_hosts.append(host)
+            if state.get("last_backup_changed"):
+                changed_hosts.append(host)
+            else:
+                unchanged_hosts.append(host)
+            if latest_backup_at is None or str(backup_at) > str(latest_backup_at):
+                latest_backup_at = backup_at
+
+        self._attr_native_value = f"{len(synced_hosts)}/{len(hosts)} synced"
+        self._attr_extra_state_attributes = {
+            "total_hosts": len(hosts),
+            "synced_hosts": synced_hosts,
+            "changed_hosts": changed_hosts,
+            "unchanged_hosts": unchanged_hosts,
+            "missing_hosts": missing_hosts,
+            "latest_backup_at": latest_backup_at,
         }
 
 
@@ -249,6 +309,8 @@ class UNiNUSStatusSensor(SensorEntity):
             "last_command": state.get("last_command"),
             "firmware_version": state.get("firmware_version"),
             "last_error": state.get("last_error"),
+            "last_backup_at": state.get("last_backup_at"),
+            "last_backup_change_type": state.get("last_backup_change_type"),
         }
         if not last_seen_text:
             self._attr_native_value = STATE_OFFLINE
@@ -280,7 +342,7 @@ class UNiNUSLastSeenSensor(SensorEntity):
     @callback
     def _handle_message(self, event) -> None:
         if event.data.get("host") == self._host:
-            self.async_write_ha_state()
+            self.async_schedule_update_ha_state(True)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(
@@ -314,7 +376,7 @@ class UNiNUSFirmwareSensor(SensorEntity):
     @callback
     def _handle_message(self, event) -> None:
         if event.data.get("host") == self._host:
-            self.async_write_ha_state()
+            self.async_schedule_update_ha_state(True)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(
@@ -329,4 +391,42 @@ class UNiNUSFirmwareSensor(SensorEntity):
             "host": self._host,
             "device_model": state.get("device_model"),
             "last_health_check_at": state.get("last_health_check_at"),
+        }
+
+
+class UNiNUSBackupStatusSensor(SensorEntity):
+    """Expose latest imported backup snapshot state for a host."""
+
+    _attr_icon = "mdi:file-clock-outline"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, host: str) -> None:
+        self._hass = hass
+        self._entry = entry
+        self._host = host
+        self._attr_name = f"UNiNUS {host} Backup"
+        self._attr_unique_id = f"unircon_{entry.entry_id[:8]}_{host}_backup"
+        self._attr_native_value = "no backup"
+
+    @callback
+    def _handle_event(self, _event) -> None:
+        self.async_schedule_update_ha_state(True)
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self._hass.bus.async_listen(f"{DOMAIN}_backup_status", self._handle_event))
+        self.async_on_remove(self._hass.bus.async_listen(f"{DOMAIN}_console", self._handle_event))
+
+    async def async_update(self) -> None:
+        data = self._hass.data[DOMAIN][self._entry.entry_id]
+        state = data.get(DATA_HOST_STATE, {}).get(self._host, {})
+        self._attr_native_value = state.get("last_backup_change_type") or "no backup"
+        self._attr_extra_state_attributes = {
+            "host": self._host,
+            "serial": state.get("last_backup_serial") or data.get(DATA_TOKENS, {}).get(self._host),
+            "last_backup_at": state.get("last_backup_at"),
+            "last_backup_changed": state.get("last_backup_changed"),
+            "last_backup_sha256": state.get("last_backup_sha256"),
+            "last_backup_site": state.get("last_backup_site"),
+            "last_backup_archive_path": state.get("last_backup_archive_path"),
+            "last_backup_metadata_path": state.get("last_backup_metadata_path"),
+            "last_backup_sync_at": state.get("last_backup_sync_at"),
         }

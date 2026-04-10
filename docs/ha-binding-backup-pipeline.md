@@ -27,6 +27,7 @@ repo 現在提供：
 3. `unircon.save_binding_map`
 4. 等待 binding-map 檔案出現
 5. 執行 `tools/run_emos_backup_scan.sh`
+6. `unircon.sync_backup_status`
 
 也就是：
 
@@ -34,6 +35,7 @@ repo 現在提供：
 HA runtime
   -> save binding map
   -> backup worker
+  -> sync backup status
   -> Git snapshot history
 ```
 
@@ -96,6 +98,15 @@ node tools/run_binding_backup_pipeline.mjs \
   --skip-health-check true
 ```
 
+### 跳過最後的 backup status sync
+
+```bash
+node tools/run_binding_backup_pipeline.mjs \
+  --ha-url http://homeassistant.local:8123 \
+  --ha-token "$HA_TOKEN" \
+  --skip-backup-status-sync true
+```
+
 ### 只驗 service，不跑 worker
 
 ```bash
@@ -154,6 +165,7 @@ unircon/binding-map.generated.json
    - binding map 有落檔
    - worker 有跑
    - repo 有 snapshot / metadata / diff
+   - HA 的 backup sensor 有更新
 
 ### 方案 B，排程化
 
@@ -176,6 +188,7 @@ unircon/binding-map.generated.json
 - 知道 token / runtime state
 - 知道 HA device/entity registry
 - 負責產出 binding map
+- 負責接回最新 backup metadata 狀態
 
 ### backup worker
 - 掃 backup landing file

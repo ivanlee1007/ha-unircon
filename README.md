@@ -12,12 +12,13 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - **Console Sensor**：每台設備的即時 console 輸出
 - **Status Sensor**：設備連線狀態
 - **Fleet Summary Sensor**：整體設備 online / stale / offline 摘要
+- **Backup Summary / Backup Status Sensors**：顯示最新 snapshot change_type、SHA、archive 路徑與同步時間
 - **Audit Log Sensor**：整合層服務操作與盤點輸出紀錄
 - **Last Seen / Firmware Sensors**：每台設備最後回報時間、已知韌體版本
 - **Dangerous Command Policy Gate**：對 `write erase` / `config restore` / `reload` / `copy ...` 等高風險命令做攔截與暫時核准
 - **Token Text**：設備序號顯示與手動設定
 - **Command Buttons**：Enable / Show Version / URCON Neighbors / Backup 等快按
-- **Services**：下指令、批次處理、MQTT 測試發佈、鄰居探索、健康檢查、inventory 匯出、部署檔生成、動態新增設備
+- **Services**：下指令、批次處理、MQTT 測試發佈、鄰居探索、健康檢查、binding map 生成、backup status 同步、inventory 匯出、部署檔生成、動態新增設備
 - **Custom Card**（v2）：四個分頁
   - 🖥️ **主控台**：即時串流 + 指令輸入 + Hot Keys + 歷史命令 ↑↓
   - 📋 **部署檔**：表單填寫 → 生成 / 複製 / 下載 deploy config
@@ -187,7 +188,14 @@ npm run backup:pipeline
 | Entity | 類型 | 說明 |
 |--------|------|------|
 | `sensor.unircon_<entry>_fleet_summary` | sensor | 全體設備 online/stale/offline 摘要 |
+| `sensor.unircon_<entry>_backup_summary` | sensor | 全體設備最新 backup sync/change 摘要 |
 | `sensor.unircon_<entry>_audit_log` | sensor | 最新 audit 記錄與最近 20 筆整合層操作 |
+
+另外每台主機會多一個：
+
+| Entity | 類型 | 說明 |
+|--------|------|------|
+| `sensor.unircon_<host>_backup` | sensor | 最新 backup change_type / snapshot 狀態 |
 
 ## Services
 
@@ -200,6 +208,7 @@ npm run backup:pipeline
 | `unircon.collect_neighbors` | URCOM 鄰居探索 |
 | `unircon.approve_operation` | 暫時核准某台設備的高風險命令 |
 | `unircon.run_health_check` | 對指定設備做 token/version/clock/result 健康檢查 |
+| `unircon.sync_backup_status` | 從 worker metadata 匯回最新 backup 狀態 |
 | `unircon.export_inventory` | 匯出目前 inventory / runtime summary（event） |
 | `unircon.export_binding_candidates` | 從 HA device/entity registry 匯出 binding-map 候選（event） |
 | `unircon.generate_binding_map` | 產出可直接落地的 binding-map JSON（event） |
@@ -246,6 +255,24 @@ data:
 ```
 
 會 fire：`unircon_binding_map_saved`
+
+### Backup status sync 範例
+
+當 worker 跑完後，可把最新 metadata 匯回 HA：
+
+```yaml
+service: unircon.sync_backup_status
+data:
+  metadata_root: /share/emostore/repo/metadata
+```
+
+會 fire：`unircon_backup_status`
+
+之後可以直接在：
+- `sensor.unircon_<entry>_backup_summary`
+- `sensor.unircon_<host>_backup`
+
+看到最新 snapshot 狀態。
 
 ## Policy Gate
 

@@ -184,6 +184,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "firmware_version": None,
                 "device_model": None,
                 "last_error": None,
+                "last_backup_at": None,
+                "last_backup_change_type": None,
+                "last_backup_changed": None,
+                "last_backup_sha256": None,
+                "last_backup_serial": None,
+                "last_backup_site": None,
+                "last_backup_archive_path": None,
+                "last_backup_metadata_path": None,
+                "last_backup_sync_at": None,
             },
         )
 
@@ -500,6 +509,86 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             raise FileExistsError(f"Refusing to overwrite existing file: {target_path}")
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(content, encoding="utf-8")
+
+    def _resolve_metadata_root(path_text: str | None) -> Path:
+        raw = (path_text or "").strip()
+        if not raw:
+            return Path("/share/emostore/repo/metadata")
+        path = Path(raw)
+        if path.is_absolute():
+            return path
+        return Path(hass.config.path(raw))
+
+    def _clear_backup_fields(state: dict[str, Any]) -> None:
+        state["last_backup_at"] = None
+        state["last_backup_change_type"] = None
+        state["last_backup_changed"] = None
+        state["last_backup_sha256"] = None
+        state["last_backup_serial"] = None
+        state["last_backup_site"] = None
+        state["last_backup_archive_path"] = None
+        state["last_backup_metadata_path"] = None
+        state["last_backup_sync_at"] = _now_iso()
+
+    def _load_latest_backup_metadata(metadata_root: Path) -> list[dict[str, Any]]:
+        if not metadata_root.exists():
+            raise FileNotFoundError(f"metadata root not found: {metadata_root}")
+
+        records: list[dict[str, Any]] = []
+        for serial_dir in sorted(metadata_root.iterdir()):
+            if not serial_dir.is_dir():
+                continue
+            json_files = sorted(serial_dir.glob("*.json"))
+            if not json_files:
+                continue
+            latest_file = json_files[-1]
+            data = json.loads(latest_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                data["_metadata_file"] = str(latest_file)
+                records.append(data)
+        return records
+
+    def _match_backup_record_to_host(record: dict[str, Any], hosts_list: list[str]) -> str | None:
+        record_host = str(record.get("host") or "").strip()
+        serial = str(record.get("serial") or "").strip()
+
+        if record_host and record_host in hosts_list:
+            return record_host
+
+        if serial:
+            for host_name in hosts_list:
+                state = _ensure_host_state(host_name)
+                known_token = str(
+                    device_data[DATA_TOKENS].get(host_name)
+                    or state.get("token")
+                    or ""
+                ).strip()
+                if known_token and known_token == serial:
+                    return host_name
+
+        return None
+
+    def _apply_backup_record_to_host(host: str, record: dict[str, Any]) -> None:
+        state = _ensure_host_state(host)
+        serial = str(record.get("serial") or "").strip() or None
+        if serial:
+            device_data[DATA_TOKENS][host] = serial
+            state["token"] = serial
+        state["last_backup_at"] = record.get("received_at")
+        state["last_backup_change_type"] = record.get("change_type")
+        state["last_backup_changed"] = record.get("changed")
+        state["last_backup_sha256"] = record.get("sha256")
+        state["last_backup_serial"] = serial
+        state["last_backup_site"] = record.get("site")
+        state["last_backup_archive_path"] = record.get("archive_path")
+        state["last_backup_metadata_path"] = record.get("_metadata_file") or record.get("metadata_path")
+        state["last_backup_sync_at"] = _now_iso()
+        identity = record.get("device_identity") or {}
+        if isinstance(identity, dict):
+            if identity.get("sw_version") and not state.get("firmware_version"):
+                state["firmware_version"] = identity.get("sw_version")
+            if identity.get("model") and not state.get("device_model"):
+                state["device_model"] = identity.get("model")
 
     # Message handler
     def _handle_message_in_loop(topic: str, payload: str) -> None:
@@ -934,6 +1023,82 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _mark_host_command(host, cmd, kind="health_check_command")
                 await asyncio.sleep(delay)
 
+    async def handle_sync_backup_status(call: ServiceCall) -> None:
+        hosts_list = call.data.get("hosts", []) or list(device_data[DATA_HOSTS])
+        clear_missing = bool(call.data.get("clear_missing", False))
+        metadata_root = _resolve_metadata_root(call.data.get("metadata_root"))
+
+        try:
+            records = await hass.async_add_executor_job(_load_latest_backup_metadata, metadata_root)
+        except FileNotFoundError as err:
+            _fire_console_output(f"[ERROR] {err}", "service/sync_backup_status")
+            _append_audit(
+                "backup_status_sync",
+                status="error",
+                message="backup status sync failed",
+                details={"reason": str(err), "metadata_root": str(metadata_root)},
+            )
+            return
+        except Exception as err:
+            _fire_console_output(f"[ERROR] Failed to load backup metadata: {err}", "service/sync_backup_status")
+            _append_audit(
+                "backup_status_sync",
+                status="error",
+                message="backup status sync failed",
+                details={"reason": str(err), "metadata_root": str(metadata_root)},
+            )
+            return
+
+        synced_hosts: list[str] = []
+        unmatched_records: list[dict[str, Any]] = []
+        seen_hosts: set[str] = set()
+
+        for record in records:
+            host = _match_backup_record_to_host(record, hosts_list)
+            if not host:
+                unmatched_records.append(
+                    {
+                        "serial": record.get("serial"),
+                        "host": record.get("host"),
+                        "metadata_file": record.get("_metadata_file"),
+                    }
+                )
+                continue
+            _apply_backup_record_to_host(host, record)
+            seen_hosts.add(host)
+            synced_hosts.append(host)
+
+        if clear_missing:
+            for host in hosts_list:
+                if host not in seen_hosts:
+                    _clear_backup_fields(_ensure_host_state(host))
+
+        payload = {
+            "entry_id": entry.entry_id,
+            "hosts": hosts_list,
+            "metadata_root": str(metadata_root),
+            "synced_hosts": synced_hosts,
+            "synced_count": len(synced_hosts),
+            "unmatched_records": unmatched_records,
+            "unmatched_count": len(unmatched_records),
+            "cleared_missing": clear_missing,
+        }
+        hass.bus.async_fire(f"{DOMAIN}_backup_status", payload)
+        _append_audit(
+            "backup_status_sync",
+            message=f"sync backup status ({len(synced_hosts)}/{len(hosts_list)} hosts)",
+            details={
+                "metadata_root": str(metadata_root),
+                "synced_count": len(synced_hosts),
+                "unmatched_count": len(unmatched_records),
+                "clear_missing": clear_missing,
+            },
+        )
+        _fire_console_output(
+            f"[BACKUP] Synced backup status for {len(synced_hosts)} host(s) from {metadata_root}",
+            "service/sync_backup_status",
+        )
+
     async def handle_export_inventory(call: ServiceCall) -> None:
         hosts_list = call.data.get("hosts", []) or list(device_data[DATA_HOSTS])
         now = dt_util.utcnow()
@@ -1102,6 +1267,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.services.async_register(DOMAIN, "collect_neighbors", handle_collect_neighbors)
         hass.services.async_register(DOMAIN, "batch_command", handle_batch_command)
         hass.services.async_register(DOMAIN, "run_health_check", handle_run_health_check)
+        hass.services.async_register(DOMAIN, "sync_backup_status", handle_sync_backup_status)
         hass.services.async_register(DOMAIN, "export_inventory", handle_export_inventory)
         hass.services.async_register(DOMAIN, "export_binding_candidates", handle_export_binding_candidates)
         hass.services.async_register(DOMAIN, "generate_binding_map", handle_generate_binding_map)
@@ -1138,6 +1304,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "collect_neighbors",
             "batch_command",
             "run_health_check",
+            "sync_backup_status",
             "export_inventory",
             "export_binding_candidates",
             "generate_binding_map",

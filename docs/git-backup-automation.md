@@ -83,6 +83,14 @@ export HA_TOKEN=YOUR_TOKEN
 node tools/run_binding_backup_pipeline.mjs --repo-root /config/ha-unircon
 ```
 
+這條 pipeline 現在也會在 worker 跑完後，自動呼叫：
+
+```text
+unircon.sync_backup_status
+```
+
+把最新 metadata 匯回 HA overlay sensor。
+
 若要自動 push：
 
 ```bash

@@ -159,6 +159,7 @@ worker 執行完會輸出 JSON summary，方便：
 - Node-RED 接
 - n8n 接
 - 之後接回 HA event
+- 之後接回 HA backup status sensor
 
 ---
 
