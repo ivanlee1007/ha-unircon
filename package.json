@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "probe:discovery": "node tools/observe_discovery.mjs"
+    "probe:discovery": "node tools/observe_discovery.mjs",
+    "backup:scan": "node tools/emos_backup_worker.mjs"
   },
   "dependencies": {
     "mqtt": "^5.15.0"

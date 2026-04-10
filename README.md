@@ -46,6 +46,7 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/ha-mqtt-overlay-strategy.md`：HA 原生 MQTT 與 `ha-unircon` 的分層策略，避免重複造輪子
 - `docs/emos-backup-versioning-architecture.md`：EMOS 備份落地到 HA 同機 FTP 後，如何接 snapshot / diff / Git 版本控制
 - `docs/git-backup-runbook.md`：Git 簡版備份版控的實作 runbook，含目錄、檔名、metadata、commit 規則
+- `docs/git-backup-worker.md`：starter worker 的 CLI 用法與目前能力邊界
 
 ## 使用前預先需求
 
@@ -102,6 +103,21 @@ Home Assistant Integration for UNiNUS Remote Console — 透過 HA 管理 UNiNUS
 - `docs/ha-mqtt-overlay-strategy.md`
 - `docs/emos-backup-versioning-architecture.md`
 - `docs/git-backup-runbook.md`
+- `docs/git-backup-worker.md`
+
+### 內建 starter worker
+
+repo 目前已提供一個 Git 簡版備份 worker：
+
+- `tools/emos_backup_worker.mjs`
+
+可用來掃描 FTP landing inbox，建立 archive / metadata / diff / Git commit。
+
+最簡單用法：
+
+```bash
+npm run backup:scan -- --root /share/emostore --commit
+```
 
 ## 安裝
 
