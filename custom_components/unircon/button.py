@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_HOSTS, DATA_TOKENS, DOMAIN
+from .const import CONF_HOSTS, CONF_PASSWORD, DATA_TOKENS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class UNiNUSCommandButton(ButtonEntity):
         # Build command from template
         cmd = self._command_template.format(
             username=config.get("username", "admin"),
-            password=config.get("password", ""),
+            password=config.get(CONF_PASSWORD, ""),
         )
 
         await self._hass.services.async_call(
@@ -90,4 +90,4 @@ class UNiNUSCommandButton(ButtonEntity):
             {"host": self._host, "command": cmd, "token": token},
             blocking=True,
         )
-        _LOGGER.info("Button pressed: %s → %s", self._attr_name, cmd)
+        _LOGGER.info("Button pressed: %s", self._attr_name)

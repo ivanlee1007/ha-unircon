@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- Redact EMOS command tokens, button command payloads, and URCOM credentials from integration logs/console output
 - Normalize numeric token handling in binding map generation
 - Align backup worker FTP landing path with actual EMOS upload behavior (`/share/<SN>.txt`)
 - Derive host list from HA entity state when `config.hosts` is empty

@@ -1131,8 +1131,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 f"[URCON] Neighbor discovery sent via backend MQTT ({broker_host_used}:{broker_port_used})",
                 "service/collect_neighbors",
             )
+            safe_payload_obj = dict(payload_obj)
+            for key in ("user", "pass"):
+                if safe_payload_obj.get(key):
+                    safe_payload_obj[key] = "***"
             _fire_console_output(
-                f"[URCON] Topic={topic} Payload={json.dumps(payload_obj, ensure_ascii=False)}",
+                f"[URCON] Topic={topic} Payload={json.dumps(safe_payload_obj, ensure_ascii=False)}",
                 "service/collect_neighbors",
             )
         except Exception as err:

@@ -19,6 +19,23 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _redact_command_payload(payload: str) -> str:
+    """Return a log-safe representation of an EMOS command payload."""
+    parts = payload.split("/")
+    if len(parts) > 1 and parts[1]:
+        parts[1] = "***"
+    return "/".join(parts)
+
+
+def _redact_urcom_payload(payload_obj: dict[str, Any]) -> dict[str, Any]:
+    """Return a log-safe copy of a URCOM payload."""
+    redacted = dict(payload_obj)
+    for key in ("user", "pass"):
+        if redacted.get(key):
+            redacted[key] = "***"
+    return redacted
+
+
 class UNiNUSMQTT:
     """MQTT wrapper for UNiNUS device communication."""
 
@@ -173,7 +190,7 @@ class UNiNUSMQTT:
         sanitized = command.replace(" ", "/")
         payload = f"/{token}/cmd/{sanitized}"
         self._client.publish(topic, payload, qos=1)
-        _LOGGER.info("Sent command to %s: %s", host, payload)
+        _LOGGER.info("Sent command to %s: %s", host, _redact_command_payload(payload))
 
     def request_token(self, host: str, username: str, password: str) -> None:
         """Request token from a device."""
@@ -243,7 +260,11 @@ class UNiNUSMQTT:
         }
         payload = json.dumps(payload_obj)
         self._client.publish(topic, payload, qos=0, retain=False)
-        _LOGGER.info("URCOM neighbor collection sent to %s payload=%s", topic, payload)
+        _LOGGER.info(
+            "URCOM neighbor collection sent to %s payload=%s",
+            topic,
+            json.dumps(_redact_urcom_payload(payload_obj)),
+        )
         return topic, payload_obj
 
     @property
